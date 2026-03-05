@@ -1,29 +1,63 @@
-import { Router, IRequest } from 'itty-router';
+import { AutoRouter, IRequest } from 'itty-router';
 
-// Environment Bindings (matches wrangler.toml)
+// Environment Bindings
 export interface Env {
   SHORT_URLS: KVNamespace;
 }
 
-// Custom request interface to help TypeScript know about params
-interface Request extends IRequest {
-  json?: () => Promise<any>; // Add json parsing to request type
-}
+const router = AutoRouter()
 
-const router = Router();
+interface Request extends IRequest {}
+
+export const generateShortCode = (length = 6) => {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
+
+export const expiryUrl = (url: string, hours = 24) => {
+  const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  return { url, expiresAt: expiresAt };
+};
+
 
 // POST /api/shorten
 // Request body: { "url": "https://example.com" }
+
 router.post('/api/shorten', async (request: Request, env: Env) => {
-  // TODO: Your logic here
-  // 1. Validate the URL from request body
-  // 2. Generate a unique short code (e.g. Base62)
-  // 3. Store in KV: await env.SHORT_URLS.put(code, url)
-  // 4. Return the short URL
-  
-  return new Response(JSON.stringify({ message: "Not implemented yet" }), {
+  let content: { url?: string } | undefined;
+  try {
+    content = await request.json();
+  } catch (err) {
+    return new Response('Invalid JSON', { status: 400 });
+  }
+
+  const url = content?.url;
+  if (!url) {
+    return new Response('Missing URL', { status: 400 });
+  }
+
+  try {
+    new URL(url);
+  } catch (err) {
+    return new Response('Invalid URL', { status: 400 });
+  }
+
+  const code = generateShortCode();
+  const kv_value = {
+    url,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiryUrl(url).expiresAt
+  }
+  await env.SHORT_URLS.put(code, JSON.stringify(kv_value));
+
+  const origin = new URL(request.url).origin;
+  return new Response(JSON.stringify({ code, shortUrl: `${origin}/${code}` }), {
     headers: { 'Content-Type': 'application/json' },
-    status: 501
+    status: 201
   });
 });
 
@@ -31,18 +65,28 @@ router.post('/api/shorten', async (request: Request, env: Env) => {
 // Redirects to the original URL
 router.get('/:code', async (request: Request, env: Env) => {
   const code = request.params.code;
+  const value = await env.SHORT_URLS.get(code);
 
-  // TODO: Your logic here
-  // 1. Look up code in KV: const url = await env.SHORT_URLS.get(code)
-  // 2. If found, return Response.redirect(url, 301)
-  // 3. If not found, return 404
+  if (!value) {
+    return new Response(`Short code '${code}' not found`, { status: 404 });
+  }
 
-  return new Response(`Short code '${code}' not found`, { status: 404 });
+  let targetUrl = value;
+  try {
+    const data = JSON.parse(value);
+    if (data.url) {
+      targetUrl = data.url;
+    }
+  } catch (e) {
+    new Response('Unexpected data format', { status: 500 });
+  }
+
+  return Response.redirect(targetUrl, 301);
 });
 
 // 404 Fallback
 router.all('*', () => new Response('Not Found', { status: 404 }));
 
 export default {
-  fetch: router.handle
+  fetch: router.fetch
 };

@@ -25,7 +25,14 @@ We use `itty-router` to handle API routes. It maps HTTP methods and paths to spe
 ### 3. KV Namespace (`SHORT_URLS`)
 A distributed key-value store acting as the database.
 - **Key**: The generated short code (e.g., `abc12`).
-- **Value**: The original long URL (e.g., `https://www.example.com/very/long/path`).
+- **Value**: A JSON string containing the original URL and metadata:
+  ```json
+  {
+    "url": "https://www.example.com",
+    "createdAt": "2024-03-05T12:00:00.000Z",
+    "expiredAt": "2024-03-06T12:00:00.000Z"
+  }
+  ```
 
 ## API Endpoints
 
@@ -35,9 +42,9 @@ A distributed key-value store acting as the database.
 - **Body**: `{ "url": "https://example.com" }`
 - **Process**:
     1.  Validates the input URL.
-    2.  Generates a unique short code (e.g., using a random string generator or hash).
-    3.  Checks for collisions (optional but recommended).
-    4.  Stores the mapping `code -> url` in KV.
+    2.  Generates a unique short code.
+    3.  Calculates an expiration date (default: 24 hours).
+    4.  Stores the mapping `code -> { url, createdAt, expiredAt }` in KV.
     5.  Returns the constructed short URL.
 
 ### 2. Redirect
@@ -46,8 +53,9 @@ A distributed key-value store acting as the database.
 - **Process**:
     1.  Extracts the `code` from the URL path.
     2.  Queries the `SHORT_URLS` KV namespace for the code.
-    3.  If found: Returns a `301` (Permanent) or `302` (Found) redirect response to the original URL.
-    4.  If not found: Returns a `404 Not Found` response.
+    3.  If found: Parses the value (handles legacy string values or new JSON format).
+    4.  Redirects (`301`) to the target URL.
+    5.  If not found: Returns a `404 Not Found`.
 
 ## Sequence Diagram
 
@@ -61,18 +69,19 @@ sequenceDiagram
 
     Note over User, KV: Shorten URL Flow
     User->>Worker: POST /api/shorten { "url": "https://example.com" }
-    Worker->>Worker: Validate URL
+    Worker->>Worker: Validate URL & Calculate Expiry
     Worker->>Worker: Generate unique code (e.g., "abc12")
-    Worker->>KV: PUT "abc12" -> "https://example.com"
+    Worker->>KV: PUT "abc12" -> JSON { url, expiredAt ... }
     KV-->>Worker: Success
-    Worker-->>User: 200 OK { "shortUrl": "https://<worker-host>/abc12" }
+    Worker-->>User: 201 Created { "shortUrl": "https://<worker-host>/abc12", "code": "abc12" }
 
     Note over User, KV: Redirect Flow
     User->>Worker: GET /abc12
     Worker->>KV: GET "abc12"
     alt Code Exists
-        KV-->>Worker: "https://example.com"
-        Worker-->>User: 301/302 Redirect to "https://example.com"
+        KV-->>Worker: JSON { "url": "...", ... }
+        Worker->>Worker: Parse JSON & Extract URL
+        Worker-->>User: 301 Redirect to "https://example.com"
     else Code Not Found
         KV-->>Worker: null
         Worker-->>User: 404 Not Found

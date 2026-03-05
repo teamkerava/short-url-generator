@@ -1,1 +1,10 @@
 node_modules/
+.wrangler/
+dist/
+build/
+.DS_Store
+*.log
+coverage/
+
+# Ignore all files in the scripts/public directory
+scripts/public/
