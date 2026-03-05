@@ -1,15 +1,31 @@
-import { AutoRouter, IRequest } from 'itty-router';
+import { AutoRouter, IRequest, error } from 'itty-router';
+import { html } from './html';
 
 // Environment Bindings
 export interface Env {
   SHORT_URLS: KVNamespace;
 }
 
-const router = AutoRouter()
+interface ShortUrlData {
+  url: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
-interface Request extends IRequest {}
+interface ShortenRequest {
+  url?: string;
+}
 
-export const generateShortCode = (length = 6) => {
+const router = AutoRouter();
+const ipLimits = new Map<string, { count: number, expiry: number }>();
+
+interface Request extends IRequest {
+  params: {
+    code: string;
+  };
+}
+
+export const generateShortCode = (length: number = 6): string => {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
   for (let i = 0; i < length; i++) {
@@ -18,9 +34,9 @@ export const generateShortCode = (length = 6) => {
   return result;
 };
 
-export const expiryUrl = (url: string, hours = 24) => {
+export const expiryUrl = (url: string, hours: number = 24): { url: string; expiresAt: string } => {
   const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
-  return { url, expiresAt: expiresAt };
+  return { url, expiresAt };
 };
 
 
@@ -28,36 +44,72 @@ export const expiryUrl = (url: string, hours = 24) => {
 // Request body: { "url": "https://example.com" }
 
 router.post('/api/shorten', async (request: Request, env: Env) => {
-  let content: { url?: string } | undefined;
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const now = Date.now();
+  let record = ipLimits.get(ip);
+
+  // Clean up if expired
+  if (record && now > record.expiry) {
+    ipLimits.delete(ip);
+    record = undefined;
+  }
+
+  // Check limit (e.g., 20 requests per hour)
+  if (record && record.count >= 20) {
+    return error(429, "Slow down there, speed racer!");
+  }
+
+  // Increment or Initialize
+  if (record) {
+    record.count++;
+  } else {
+    ipLimits.set(ip, { count: 1, expiry: now + 3600 * 1000 }); // 1 hour window
+  }
+
+  let content: ShortenRequest | undefined;
   try {
-    content = await request.json();
+    content = await request.json() as ShortenRequest;
   } catch (err) {
-    return new Response('Invalid JSON', { status: 400 });
+    return error(400, "Oh, so parsing JSON is hard now? Try sending valid JSON next time.");
   }
 
   const url = content?.url;
   if (!url) {
-    return new Response('Missing URL', { status: 400 });
+    return error(400, "No URL? Really? What did you expect me to shorten, your hopes and dreams?");
+  }
+
+  let normalizedUrl = url.trim();
+  if (!normalizedUrl.match(/^https?:\/\//i)) {
+    normalizedUrl = 'https://' + normalizedUrl;
   }
 
   try {
-    new URL(url);
+    new URL(normalizedUrl);
   } catch (err) {
-    return new Response('Invalid URL', { status: 400 });
+    return error(400, "That URL is as valid as a three-dollar bill. Fix it, maybe?");
   }
 
   const code = generateShortCode();
-  const kv_value = {
-    url,
+  const kv_value: ShortUrlData = {
+    url: normalizedUrl,
     createdAt: new Date().toISOString(),
-    expiresAt: expiryUrl(url).expiresAt
-  }
+    expiresAt: expiryUrl(normalizedUrl).expiresAt
+  };
   await env.SHORT_URLS.put(code, JSON.stringify(kv_value));
 
   const origin = new URL(request.url).origin;
   return new Response(JSON.stringify({ code, shortUrl: `${origin}/${code}` }), {
     headers: { 'Content-Type': 'application/json' },
     status: 201
+  });
+});
+
+
+// GET /
+// Serves the frontend
+router.get('/', () => {
+  return new Response(html, {
+    headers: { 'Content-Type': 'text/html' }
   });
 });
 
@@ -68,24 +120,28 @@ router.get('/:code', async (request: Request, env: Env) => {
   const value = await env.SHORT_URLS.get(code);
 
   if (!value) {
-    return new Response(`Short code '${code}' not found`, { status: 404 });
+    return error(404, `The code '${code}' doesn't exist. Maybe double-check your typing skills?`);
   }
 
   let targetUrl = value;
   try {
-    const data = JSON.parse(value);
+    const data = JSON.parse(value) as ShortUrlData;
     if (data.url) {
       targetUrl = data.url;
     }
+
+    if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
+      return error(410, "This short URL has expired. What did you expect? Eternal life?");
+    }
   } catch (e) {
-    new Response('Unexpected data format', { status: 500 });
+    // If parsing fails, it might be a legacy plain URL, so we proceed with targetUrl = value
   }
 
   return Response.redirect(targetUrl, 301);
 });
 
 // 404 Fallback
-router.all('*', () => new Response('Not Found', { status: 404 }));
+router.all('*', () => error(404, "Not found. But hey, at least you tried, right?"));
 
 export default {
   fetch: router.fetch
