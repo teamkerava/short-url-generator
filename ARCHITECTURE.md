@@ -4,7 +4,7 @@ This document outlines the architecture for the serverless Short URL Generator, 
 
 ## Overview
 
-The system is designed to be a high-performance, low-latency URL shortener. It leverages Cloudflare's edge network to handle requests close to the user and uses Cloudflare KV (Key-Value) storage for fast lookups of short codes.
+The system is designed to be a high-performance, low-latency URL shortener. It leverages Cloudflare's edge network to handle requests close to the user and uses Cloudflare KV (Key-Value) storage for fast lookups of short codes. The system includes a web interface, rate limiting, and automatic URL expiration.
 
 ## Technology Stack
 
@@ -14,6 +14,21 @@ The system is designed to be a high-performance, low-latency URL shortener. It l
 - **Storage**: [Cloudflare KV](https://developers.cloudflare.com/kv/) (Global, low-latency key-value store)
 - **Deployment**: `wrangler` CLI
 
+## Project Structure
+
+```
+├── src/
+│   ├── index.ts       # Main worker logic and routes
+│   ├── html.ts        # Frontend web interface HTML
+│   └── index.test.ts  # Unit tests
+├── scripts/
+│   ├── test-local-kv.sh    # KV testing script
+│   └── local-test-curl.sh # curl-based testing
+├── wrangler.toml      # Worker configuration
+├── package.json       # Dependencies
+└── tsconfig.json     # TypeScript configuration
+```
+
 ## Components
 
 ### 1. The Worker (`src/index.ts`)
@@ -22,7 +37,10 @@ The core logic resides in a single Cloudflare Worker. It handles incoming HTTP r
 ### 2. Router
 We use `itty-router` to handle API routes. It maps HTTP methods and paths to specific handler functions.
 
-### 3. KV Namespace (`SHORT_URLS`)
+### 3. Frontend (`src/html.ts`)
+A built-in web interface served at the root URL (`/`). Users can enter a URL to shorten directly from their browser.
+
+### 4. KV Namespace (`SHORT_URLS`)
 A distributed key-value store acting as the database.
 - **Key**: The generated short code (e.g., `abc12`).
 - **Value**: A JSON string containing the original URL and metadata:
@@ -30,36 +48,63 @@ A distributed key-value store acting as the database.
   {
     "url": "https://www.example.com",
     "createdAt": "2024-03-05T12:00:00.000Z",
-    "expiredAt": "2024-03-06T12:00:00.000Z"
+    "expiresAt": "2024-03-06T12:00:00.000Z"
   }
   ```
 
+### 5. Rate Limiter
+In-memory rate limiting using a Map to track IP addresses.
+- **Limit**: 20 requests per hour per IP address
+- **Implementation**: `ipLimits` Map stores `{ count, expiry }` for each IP
+
 ## API Endpoints
 
-### 1. Shorten URL
+### 1. GET /
+Serves the frontend web interface.
+
+### 2. POST /api/shorten
 - **Method**: `POST`
 - **Path**: `/api/shorten`
 - **Body**: `{ "url": "https://example.com" }`
 - **Process**:
-    1.  Validates the input URL.
-    2.  Generates a unique short code.
-    3.  Calculates an expiration date (default: 24 hours).
-    4.  Stores the mapping `code -> { url, createdAt, expiredAt }` in KV.
-    5.  Returns the constructed short URL.
+    1.  Checks rate limit (20 requests/hour per IP)
+    2.  Validates and parses the input JSON
+    3.  Normalizes the URL (adds `https://` if missing)
+    4.  Validates the URL format
+    5.  Generates a unique short code
+    6.  Calculates an expiration date (default: 24 hours)
+    7.  Stores the mapping `code -> { url, createdAt, expiresAt }` in KV
+    8.  Returns the constructed short URL
+- **Rate Limiting**: Returns 429 if exceeded
 
-### 2. Redirect
+### 3. GET /:code
 - **Method**: `GET`
 - **Path**: `/:code`
 - **Process**:
-    1.  Extracts the `code` from the URL path.
-    2.  Queries the `SHORT_URLS` KV namespace for the code.
-    3.  If found: Parses the value (handles legacy string values or new JSON format).
-    4.  Redirects (`301`) to the target URL.
-    5.  If not found: Returns a `404 Not Found`.
+    1.  Extracts the `code` from the URL path
+    2.  Queries the `SHORT_URLS` KV namespace for the code
+    3.  If found:
+        - Parses the value (handles legacy string values or new JSON format)
+        - Checks if the URL has expired
+        - Redirects (`301`) to the target URL
+    4.  If not found: Returns a `404 Not Found`
+    5.  If expired: Returns a `410 Gone`
+
+## URL Processing
+
+### Normalization
+URLs are automatically normalized:
+- If a URL doesn't start with `http://` or `https://`, `https://` is prepended
+- URLs are trimmed for whitespace
+
+### Expiration
+- Default TTL: 24 hours from creation
+- Stored as ISO 8601 timestamp in `expiresAt` field
+- Checked on redirect; expired URLs return 410 Gone
 
 ## Sequence Diagram
 
-The following diagram illustrates the two main flows: creating a short URL and accessing a short URL.
+The following diagram illustrates the main flows: creating a short URL, accessing a short URL, and rate limiting.
 
 ```mermaid
 sequenceDiagram
@@ -68,20 +113,30 @@ sequenceDiagram
     participant KV as Cloudflare KV
 
     Note over User, KV: Shorten URL Flow
-    User->>Worker: POST /api/shorten { "url": "https://example.com" }
-    Worker->>Worker: Validate URL & Calculate Expiry
-    Worker->>Worker: Generate unique code (e.g., "abc12")
-    Worker->>KV: PUT "abc12" -> JSON { url, expiredAt ... }
-    KV-->>Worker: Success
-    Worker-->>User: 201 Created { "shortUrl": "https://<worker-host>/abc12", "code": "abc12" }
+    User->>Worker: POST /api/shorten { "url": "example.com" }
+    Worker->>Worker: Check rate limit (20/hour per IP)
+    alt Rate Limited
+        Worker-->>User: 429 Too Many Requests
+    else Within Limit
+        Worker->>Worker: Normalize URL (add https://)
+        Worker->>Worker: Validate URL format
+        Worker->>Worker: Generate unique code (e.g., "abc12")
+        Worker->>KV: PUT "abc12" -> JSON { url, createdAt, expiresAt }
+        KV-->>Worker: Success
+        Worker-->>User: 201 Created { "shortUrl": "https://<host>/abc12", "code": "abc12" }
+    end
 
     Note over User, KV: Redirect Flow
     User->>Worker: GET /abc12
     Worker->>KV: GET "abc12"
     alt Code Exists
-        KV-->>Worker: JSON { "url": "...", ... }
+        KV-->>Worker: JSON { "url": "...", "expiresAt": "..." }
         Worker->>Worker: Parse JSON & Extract URL
-        Worker-->>User: 301 Redirect to "https://example.com"
+        alt Not Expired
+            Worker-->>User: 301 Redirect to "https://example.com"
+        else Expired
+            Worker-->>User: 410 Gone
+        end
     else Code Not Found
         KV-->>Worker: null
         Worker-->>User: 404 Not Found
@@ -91,6 +146,6 @@ sequenceDiagram
 ## Future Improvements
 
 - **Analytics**: Store click counts, referrers, and user agents in KV or a separate analytics engine (e.g., Cloudflare Analytics Engine).
-- **Expiration**: Set TTL (Time To Live) on KV entries for temporary links.
 - **Custom Aliases**: Allow users to specify their own custom codes (e.g., `/mylink`).
 - **Auth**: Add API key authentication for the shortening endpoint to prevent abuse.
+- **Persistent Rate Limiting**: Move rate limiting to KV for distributed enforcement across multiple workers.

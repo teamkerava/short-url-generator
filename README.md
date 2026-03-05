@@ -7,6 +7,10 @@ A serverless URL shortener built with Cloudflare Workers, TypeScript, and Cloudf
 - Serverless architecture using Cloudflare Workers
 - Low-latency data storage with Cloudflare KV
 - JSON-based storage format for metadata
+- Built-in web interface for shortening URLs
+- Automatic URL normalization (adds https:// if missing)
+- Rate limiting (20 requests per hour per IP)
+- URL expiration (default: 24 hours)
 
 ## Prerequisites
 
@@ -36,6 +40,10 @@ npm start
 ```
 
 This runs `wrangler dev`, which emulates the Worker and KV storage locally on port 8787.
+
+## Web Interface
+
+A built-in web interface is available at the root URL (`http://localhost:8787/`). You can enter a URL to shorten directly from your browser.
 
 ## Testing
 
