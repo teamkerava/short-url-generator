@@ -44,28 +44,6 @@ export const expiryUrl = (url: string, hours: number = 24): { url: string; expir
 // Request body: { "url": "https://example.com" }
 
 router.post('/api/shorten', async (request: Request, env: Env) => {
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const now = Date.now();
-  let record = ipLimits.get(ip);
-
-  // Clean up if expired
-  if (record && now > record.expiry) {
-    ipLimits.delete(ip);
-    record = undefined;
-  }
-
-  // Check limit (e.g., 20 requests per hour)
-  if (record && record.count >= 20) {
-    return error(429, "Slow down there, speed racer!");
-  }
-
-  // Increment or Initialize
-  if (record) {
-    record.count++;
-  } else {
-    ipLimits.set(ip, { count: 1, expiry: now + 3600 * 1000 }); // 1 hour window
-  }
-
   let content: ShortenRequest | undefined;
   try {
     content = await request.json() as ShortenRequest;
@@ -133,9 +111,7 @@ router.get('/:code', async (request: Request, env: Env) => {
     if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
       return error(410, "This short URL has expired. What did you expect? Eternal life?");
     }
-  } catch (e) {
-    // If parsing fails, it might be a legacy plain URL, so we proceed with targetUrl = value
-  }
+  } catch (e) {}
 
   return Response.redirect(targetUrl, 301);
 });

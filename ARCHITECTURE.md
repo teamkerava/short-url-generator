@@ -4,7 +4,7 @@ This document outlines the architecture for the serverless Short URL Generator, 
 
 ## Overview
 
-The system is designed to be a high-performance, low-latency URL shortener. It leverages Cloudflare's edge network to handle requests close to the user and uses Cloudflare KV (Key-Value) storage for fast lookups of short codes. The system includes a web interface, rate limiting, and automatic URL expiration.
+The system is designed to be a high-performance, low-latency URL shortener. It leverages Cloudflare's edge network to handle requests close to the user and uses Cloudflare KV (Key-Value) storage for fast lookups of short codes. The system includes a web interface and automatic URL expiration.
 
 ## Technology Stack
 
@@ -52,11 +52,6 @@ A distributed key-value store acting as the database.
   }
   ```
 
-### 5. Rate Limiter
-In-memory rate limiting using a Map to track IP addresses.
-- **Limit**: 20 requests per hour per IP address
-- **Implementation**: `ipLimits` Map stores `{ count, expiry }` for each IP
-
 ## API Endpoints
 
 ### 1. GET /
@@ -67,15 +62,13 @@ Serves the frontend web interface.
 - **Path**: `/api/shorten`
 - **Body**: `{ "url": "https://example.com" }`
 - **Process**:
-    1.  Checks rate limit (20 requests/hour per IP)
-    2.  Validates and parses the input JSON
-    3.  Normalizes the URL (adds `https://` if missing)
-    4.  Validates the URL format
-    5.  Generates a unique short code
-    6.  Calculates an expiration date (default: 24 hours)
-    7.  Stores the mapping `code -> { url, createdAt, expiresAt }` in KV
-    8.  Returns the constructed short URL
-- **Rate Limiting**: Returns 429 if exceeded
+    1.  Validates and parses the input JSON
+    2.  Normalizes the URL (adds `https://` if missing)
+    3.  Validates the URL format
+    4.  Generates a unique short code
+    5.  Calculates an expiration date (default: 24 hours)
+    6.  Stores the mapping `code -> { url, createdAt, expiresAt }` in KV
+    7.  Returns the constructed short URL
 
 ### 3. GET /:code
 - **Method**: `GET`
@@ -104,7 +97,7 @@ URLs are automatically normalized:
 
 ## Sequence Diagram
 
-The following diagram illustrates the main flows: creating a short URL, accessing a short URL, and rate limiting.
+The following diagram illustrates the main flows: creating a short URL and accessing a short URL.
 
 ```mermaid
 sequenceDiagram
@@ -114,17 +107,12 @@ sequenceDiagram
 
     Note over User, KV: Shorten URL Flow
     User->>Worker: POST /api/shorten { "url": "example.com" }
-    Worker->>Worker: Check rate limit (20/hour per IP)
-    alt Rate Limited
-        Worker-->>User: 429 Too Many Requests
-    else Within Limit
-        Worker->>Worker: Normalize URL (add https://)
-        Worker->>Worker: Validate URL format
-        Worker->>Worker: Generate unique code (e.g., "abc12")
-        Worker->>KV: PUT "abc12" -> JSON { url, createdAt, expiresAt }
-        KV-->>Worker: Success
-        Worker-->>User: 201 Created { "shortUrl": "https://<host>/abc12", "code": "abc12" }
-    end
+    Worker->>Worker: Normalize URL (add https://)
+    Worker->>Worker: Validate URL format
+    Worker->>Worker: Generate unique code (e.g., "abc12")
+    Worker->>KV: PUT "abc12" -> JSON { url, createdAt, expiresAt }
+    KV-->>Worker: Success
+    Worker-->>User: 201 Created { "shortUrl": "https://<host>/abc12", "code": "abc12" }
 
     Note over User, KV: Redirect Flow
     User->>Worker: GET /abc12
@@ -146,6 +134,6 @@ sequenceDiagram
 ## Future Improvements
 
 - **Analytics**: Store click counts, referrers, and user agents in KV or a separate analytics engine (e.g., Cloudflare Analytics Engine).
+- **Rate Limiting**: Add rate limiting to prevent abuse.
 - **Custom Aliases**: Allow users to specify their own custom codes (e.g., `/mylink`).
 - **Auth**: Add API key authentication for the shortening endpoint to prevent abuse.
-- **Persistent Rate Limiting**: Move rate limiting to KV for distributed enforcement across multiple workers.

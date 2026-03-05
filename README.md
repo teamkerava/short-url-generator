@@ -9,7 +9,6 @@ A serverless URL shortener built with Cloudflare Workers, TypeScript, and Cloudf
 - JSON-based storage format for metadata
 - Built-in web interface for shortening URLs
 - Automatic URL normalization (adds https:// if missing)
-- Rate limiting (20 requests per hour per IP)
 - URL expiration (default: 24 hours)
 
 ## Prerequisites
