@@ -1,149 +1,132 @@
 export const html = `<!DOCTYPE html>
 <html>
 <head>
-    <title>Short URL Generator</title>
+    <title>Shorten</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+        :root {
+            --accent: #38bdf8;
+        }
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #fff;
-            color: #333;
+            background: #f5f5f5;
+            color: #1a1a1a;
             line-height: 1.6;
             padding: 1rem;
         }
-        .container {
-            width: 100%;
-            max-width: 640px;
-        }
         h1 {
-            color: #333;
-            margin: 0 0 1rem;
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin: 0 0 0.5rem;
             text-align: center;
         }
         .lead {
-            margin: 0 0 1.25rem;
+            font-size: 1.1rem;
+            margin: 0 0 2rem;
             text-align: center;
-            color: #555;
+            color: #666;
         }
         .panel {
-            background: #f4f4f4;
-            border-radius: 4px;
-            padding: 1rem;
+            background: #fff;
+            border-radius: 8px;
+            padding: 1.5rem;
             margin-bottom: 1rem;
             border: 1px solid #e5e5e5;
         }
-        form {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
         label {
-            font-size: 0.9rem;
-            color: #555;
-            margin-top: 0.15rem;
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
-        .expiration-custom {
-            display: none;
-        }
-        input, select, button {
-            padding: 0.75rem;
+        input, select {
+            padding: 0.875rem 1rem;
             border: 1px solid #d9d9d9;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 1rem;
             background: #fff;
+            color: #1a1a1a;
+            width: 100%;
         }
         input:focus, select:focus {
             outline: none;
-            border-color: #007bff;
+            border-color: var(--accent);
         }
-        #urlInput, #durationInput {
-            font-family: 'Courier New', monospace;
+        input::placeholder {
+            color: #999;
+        }
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+        }
+        select option {
+            background: #fff;
+            color: #1a1a1a;
         }
         button {
-            background: #007bff;
-            color: white;
-            cursor: pointer;
-            font-weight: 500;
-            border-color: #007bff;
-        }
-        button:hover {
-            background: #0069d9;
-            border-color: #0069d9;
-        }
-        #result {
+            padding: 0.875rem 1.5rem;
+            border: none;
+            border-radius: 6px;
             font-size: 1rem;
-            display: none;
-        }
-        #result.is-visible {
-            display: block;
-            margin-top: 1rem;
-        }
-        .result-success {
-            color: #2d7a46;
-            font-weight: 500;
+            font-weight: 600;
+            cursor: pointer;
+            background: var(--accent);
+            color: #fff;
+            transition: transform 0.1s ease, opacity 0.1s ease;
         }
         .result-label {
-            margin-bottom: 0.45rem;
-            font-size: 0.9rem;
-            color: #555;
-            font-weight: 400;
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
         }
         .short-url-box {
             display: flex;
             align-items: center;
-            justify-content: space-between;
             gap: 0.5rem;
-            background: #fff;
-            border: 1px solid #d9d9d9;
-            border-radius: 4px;
+            background: #f5f5f5;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
             padding: 0.5rem;
         }
         .short-url-link {
-            color: #007bff;
+            color: var(--accent);
             text-decoration: none;
-            font-family: 'Courier New', monospace;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 0.9rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             flex: 1;
         }
-        #result a {
-            color: #007bff;
-            word-break: break-all;
-        }
         .copy-btn {
-            padding: 0.4rem 0.6rem;
+            padding: 0.5rem 0.875rem;
             font-size: 0.85rem;
-            line-height: 1.2;
-            width: auto;
+            background: var(--accent);
+            color: #fff;
             flex-shrink: 0;
         }
-        .error {
-            color: #c43d3d;
-        }
-        footer {
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            color: #555;
-            text-align: center;
-        }
-        footer a {
-            color: #007bff;
-            text-decoration: none;
-        }
-        footer a:hover {
-            text-decoration: underline;
-        }
         @media (max-width: 640px) {
+            h1 {
+                font-size: 2rem;
+            }
             .container {
                 max-width: 100%;
             }
             .panel {
-                padding: 0.85rem;
+                padding: 1.25rem;
             }
             .short-url-box {
                 flex-direction: column;
@@ -154,30 +137,78 @@ export const html = `<!DOCTYPE html>
                 overflow-wrap: anywhere;
             }
         }
+        .container {
+            width: 100%;
+            max-width: 540px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .expiration-custom {
+            display: none;
+        }
+        #result {
+            display: none;
+            margin-top: 1rem;
+        }
+        #result.is-visible {
+            display: block;
+        }
+        .error {
+            color: #ff6b6b;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+        footer {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: #666;
+            text-align: center;
+        }
+        footer a:hover {
+            color: var(--accent);
+        }
+        button:hover {
+            opacity: 0.85;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .short-url-link:hover {
+            text-decoration: underline;
+        }
+        .copy-btn:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Short URL Generator</h1>
+        <h1>Shorten</h1>
         <div class="panel">
             <form id="shortenForm">
-                <input type="text" id="urlInput" placeholder="Enter URL to shorten (e.g. https://example.com)" required>
-                <label for="expirationSelect">Expiration</label>
-                <select id="expirationSelect">
-                    <option value="24h" selected>24 hours (default)</option>
-                    <option value="15m">15 minutes</option>
-                    <option value="1h">1 hour</option>
-                    <option value="1d">1 day</option>
-                    <option value="1w">1 week</option>
-                    <option value="custom">Custom...</option>
-                </select>
-                <input type="text" id="durationInput" class="expiration-custom" placeholder="Custom expiration (e.g. 45m, 36h, 10d)" title="Use format like '15m' for 15 minutes, '1h' for 1 hour, '1d' for 1 day, '1w' for 1 week.">
+                <div>
+                    <input type="text" id="urlInput" placeholder="Paste your URL here" required>
+                </div>
+                <div>
+                    <label for="expirationSelect">Expiration</label>
+                    <select id="expirationSelect">
+                        <option value="24h" selected>24 hours (default)</option>
+                        <option value="15m">15 minutes</option>
+                        <option value="1h">1 hour</option>
+                        <option value="1w">1 week</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <input type="text" id="durationInput" class="expiration-custom" placeholder="e.g. 45m, 36h, 10d">
                 <button type="submit">Shorten URL</button>
             </form>
             <div id="result"></div>
         </div>
         <footer>
-            <a href="/api/docs">View API Documentation</a>
+            <a href="/api/docs">API Docs</a> - <a href="https://github.com/teamkerava/short-url-generator" target="_blank">Source</a>
         </footer>
     </div>
     <script>
@@ -210,7 +241,7 @@ export const html = `<!DOCTYPE html>
 
                 if (response.ok) {
                     resultDiv.classList.add('is-visible');
-                    resultDiv.innerHTML = '<div class="success result-success"><div class="result-label">Your short URL</div><div class="short-url-box"><a href="' + data.shortUrl + '" target="_blank" class="short-url-link">' + data.shortUrl + '</a><button type="button" class="copy-btn" id="copyBtn">Copy</button></div></div>';
+                    resultDiv.innerHTML = '<div class="result-label">Your short URL</div><div class="short-url-box"><a href="' + data.shortUrl + '" target="_blank" class="short-url-link">' + data.shortUrl + '</a><button type="button" class="copy-btn" id="copyBtn">Copy</button></div>';
                     const copyBtn = document.getElementById('copyBtn');
                     copyBtn.onclick = async function() {
                         try {
@@ -226,12 +257,12 @@ export const html = `<!DOCTYPE html>
                         }
                     };
                 } else {
-                    resultDiv.classList.remove('is-visible');
-                    resultDiv.innerHTML = '';
+                    resultDiv.classList.add('is-visible');
+                    resultDiv.innerHTML = '<div class="error">' + (data.error || 'Something went wrong') + '</div>';
                 }
             } catch (error) {
-                resultDiv.classList.remove('is-visible');
-                resultDiv.innerHTML = '';
+                resultDiv.classList.add('is-visible');
+                resultDiv.innerHTML = '<div class="error">Failed to connect</div>';
             }
         };
         window.onload = function () {
