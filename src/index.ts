@@ -1,5 +1,6 @@
 import { AutoRouter, IRequest, error } from 'itty-router';
 import { html } from './html';
+import { apiDocs } from './api-docs';
 
 // Environment Bindings
 export interface Env {
@@ -14,16 +15,16 @@ interface ShortUrlData {
 
 interface ShortenRequest {
   url?: string;
+  duration?: string;
 }
-
-const router = AutoRouter();
-const ipLimits = new Map<string, { count: number, expiry: number }>();
 
 interface Request extends IRequest {
   params: {
     code: string;
   };
 }
+
+const router = AutoRouter();
 
 export const generateShortCode = (length: number = 6): string => {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -34,7 +35,26 @@ export const generateShortCode = (length: number = 6): string => {
   return result;
 };
 
-export const expiryUrl = (url: string, hours: number = 24): { url: string; expiresAt: string } => {
+export const parseDuration = (duration: string | number): number => {
+  if (typeof duration === 'number') return duration;
+
+  const match = duration.match(/^(\d+)([mhdw]?)$/i);
+  if (!match) throw new Error("Invalid duration format. Use format like '15m', '1d', '2h', etc.");
+
+  const value = parseInt(match[1]);
+  const unit = match[2]?.toLowerCase() || 'h'; // default to hours if no unit
+
+  switch (unit) {
+    case 'm': return value / 60; // minutes to hours
+    case 'h': return value;
+    case 'd': return value * 24;
+    case 'w': return value * 24 * 7;
+    default: throw new Error("Unknown time unit. Supported: m (minutes), h (hours), d (days), w (weeks)");
+  }
+};
+
+export const expiryUrl = (url: string, duration: string | number = 24): { url: string; expiresAt: string } => {
+  const hours = parseDuration(duration);
   const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
   return { url, expiresAt };
 };
@@ -50,43 +70,56 @@ router.post('/api/shorten', async (request: Request, env: Env) => {
   } catch (err) {
     return error(400, "Oh, so parsing JSON is hard now? Try sending valid JSON next time.");
   }
-
-  const url = content?.url;
+  
+  const url = content?.url;  
   if (!url) {
     return error(400, "No URL? Really? What did you expect me to shorten, your hopes and dreams?");
   }
 
   let normalizedUrl = url.trim();
-  if (!normalizedUrl.match(/^https?:\/\//i)) {
-    normalizedUrl = 'https://' + normalizedUrl;
-  }
 
   try {
-    new URL(normalizedUrl);
+    // Use URL constructor to validate and normalize the URL
+    const urlObject = new URL(normalizedUrl);
+    if (urlObject.protocol !== 'http:' && urlObject.protocol !== 'https:') {
+      return error(400, "Unsupported URL protocol. Only 'http' and 'https' are allowed.");
+    }
+
+    normalizedUrl = urlObject.toString();
   } catch (err) {
-    return error(400, "That URL is as valid as a three-dollar bill. Fix it, maybe?");
+    return error(400, "Invalid URL. Please provide a valid URL to shorten. (http:// or https://)");
   }
 
   const code = generateShortCode();
+  const duration = content?.duration || 24;
   const kv_value: ShortUrlData = {
     url: normalizedUrl,
     createdAt: new Date().toISOString(),
-    expiresAt: expiryUrl(normalizedUrl).expiresAt
+    expiresAt: expiryUrl(normalizedUrl, duration).expiresAt
   };
   await env.SHORT_URLS.put(code, JSON.stringify(kv_value));
 
   const origin = new URL(request.url).origin;
-  return new Response(JSON.stringify({ code, shortUrl: `${origin}/${code}` }), {
+  return new Response(JSON.stringify({ 
+    code, 
+    shortUrl: `${origin}/${code}`,
+    expiresAt: kv_value.expiresAt 
+  }), {
     headers: { 'Content-Type': 'application/json' },
     status: 201
   });
 });
 
-
 // GET /
-// Serves the frontend
 router.get('/', () => {
   return new Response(html, {
+    headers: { 'Content-Type': 'text/html' }
+  });
+});
+
+// GET /api/docs
+router.get('/api/docs', () => { 
+  return new Response(apiDocs, {
     headers: { 'Content-Type': 'text/html' }
   });
 });

@@ -8,7 +8,7 @@ echo "Testing against $BASE_URL..."
 echo -e "\nWriting to KV (creating short URL)..."
 RESPONSE=$(curl -s -X POST "$BASE_URL/api/shorten" \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://www.google.com"}')
+  -d '{"url": "https://www.google.com", "duration": "2d"}')
 
 echo "$RESPONSE" | jq
 
