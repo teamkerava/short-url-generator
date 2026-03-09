@@ -40,6 +40,12 @@ We use `itty-router` to handle API routes. It maps HTTP methods and paths to spe
 ### 3. Frontend (`src/html.ts`)
 A built-in web interface served at the root URL (`/`). Users can enter a URL to shorten directly from their browser.
 
+Features:
+- One-click copy button using the modern Clipboard API
+- Configurable URL expiration (15 minutes, 1 hour, 1 day, 24 hours default, 1 week, or custom)
+- Automatic form submission on Enter key
+- Visual feedback for copy success/failure
+
 ### 4. KV Namespace (`SHORT_URLS`)
 A distributed key-value store acting as the database.
 - **Key**: The generated short code (e.g., `abc12`).
@@ -57,20 +63,31 @@ A distributed key-value store acting as the database.
 ### 1. GET /
 Serves the frontend web interface.
 
-### 2. POST /api/shorten
+### 2. GET /api/docs
+Serves HTML API documentation.
+
+### 3. POST /api/shorten
 - **Method**: `POST`
 - **Path**: `/api/shorten`
-- **Body**: `{ "url": "https://example.com" }`
+- **Body**: `{ "url": "https://example.com", "duration": "24h" }`
 - **Process**:
     1.  Validates and parses the input JSON
     2.  Normalizes the URL (adds `https://` if missing)
     3.  Validates the URL format
     4.  Generates a unique short code
-    5.  Calculates an expiration date (default: 24 hours)
+    5.  Calculates an expiration date (default: 24 hours, or custom duration)
     6.  Stores the mapping `code -> { url, createdAt, expiresAt }` in KV
     7.  Returns the constructed short URL
 
-### 3. GET /:code
+**Duration Options:**
+- `15m` - 15 minutes
+- `1h` - 1 hour
+- `1d` - 1 day
+- `24h` - 24 hours (default)
+- `1w` - 1 week
+- Custom format (e.g., `36h`, `10d`)
+
+### 4. GET /:code
 - **Method**: `GET`
 - **Path**: `/:code`
 - **Process**:
@@ -92,6 +109,7 @@ URLs are automatically normalized:
 
 ### Expiration
 - Default TTL: 24 hours from creation
+- Configurable options: 15 minutes, 1 hour, 1 day, 24 hours, 1 week, or custom format
 - Stored as ISO 8601 timestamp in `expiresAt` field
 - Checked on redirect; expired URLs return 410 Gone
 

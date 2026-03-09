@@ -2,19 +2,9 @@
 
 A serverless URL shortener built with Cloudflare Workers, TypeScript, and Cloudflare KV.
 
-## Features
-
-- Serverless architecture using Cloudflare Workers
-- Low-latency data storage with Cloudflare KV
-- JSON-based storage format for metadata
-- Built-in web interface for shortening URLs
-- Automatic URL normalization (adds https:// if missing)
-- URL expiration (default: 24 hours)
-
 ## Prerequisites
 
-- Node.js
-- npm or bun
+- bun
 - Wrangler CLI (installed via devDependencies)
 
 ## Setup
@@ -23,8 +13,6 @@ A serverless URL shortener built with Cloudflare Workers, TypeScript, and Cloudf
 2. Install dependencies:
 
 ```bash
-npm install
-# or
 bun install
 ```
 
@@ -34,15 +22,13 @@ Start the local development server:
 
 ```bash
 bun start
-# or
-npm start
 ```
 
 This runs `wrangler dev`, which emulates the Worker and KV storage locally on port 8787.
 
 ## Web Interface
 
-A built-in web interface is available at the root URL (`http://localhost:8787/`). You can enter a URL to shorten directly from your browser.
+A built-in web interface is available at the root URL (`http://localhost:8787/`).
 
 ## Testing
 
@@ -75,10 +61,10 @@ curl -I http://localhost:8787/<code_from_response>
 To deploy to Cloudflare:
 
 ```bash
-wrangler deploy
+bun run deploy
 ```
 
-Note: You must have a Cloudflare account and be logged in via Wrangler (`npx wrangler login`). You also need to create the KV namespace in your Cloudflare dashboard or via CLI and update `wrangler.toml` with the correct ID.
+Note: You must have a Cloudflare account and be logged in via Wrangler (`wrangler login`). You also need to create the KV namespace in your Cloudflare dashboard or via CLI and update `wrangler.toml` with the correct ID.
 
 ## API Reference
 
@@ -90,9 +76,14 @@ Creates a new short URL.
 
 ```json
 {
-  "url": "https://www.example.com"
+  "url": "https://www.example.com",
+  "duration": "24h"
 }
 ```
+
+**Parameters:**
+- `url` (required): The URL to shorten
+- `duration` (optional): Expiration time. Options: `15m`, `1h`, `1d`, `24h`, `1w`, or custom format (e.g., `36h`, `10d`). Default: `24h`
 
 **Response:**
 
@@ -109,3 +100,7 @@ Redirects to the original URL associated with the code.
 
 - Returns 301 Redirect if found.
 - Returns 404 Not Found if the code does not exist.
+
+### GET /api/docs
+
+Returns HTML documentation for the API endpoints.
