@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A URL shortener template for Cloudflare Workers",
   "main": "src/index.ts",
+  "lint-staged": {
+    "*.ts": ["tsc --noEmit"]
+  },
   "scripts": {
     "start": "wrangler dev",
     "deploy": "wrangler deploy",
