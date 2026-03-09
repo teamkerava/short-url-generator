@@ -214,16 +214,7 @@ export const html = `<!DOCTYPE html>
                     const copyBtn = document.getElementById('copyBtn');
                     copyBtn.onclick = async function() {
                         try {
-                            if (navigator.clipboard && navigator.clipboard.writeText) {
-                                await navigator.clipboard.writeText(data.shortUrl);
-                            } else {
-                                const tempInput = document.createElement('input');
-                                tempInput.value = data.shortUrl;
-                                document.body.appendChild(tempInput);
-                                tempInput.select();
-                                document.execCommand('copy');
-                                document.body.removeChild(tempInput);
-                            }
+                            await navigator.clipboard.writeText(data.shortUrl);
                             copyBtn.textContent = 'Copied';
                             setTimeout(function () {
                                 if (document.body.contains(copyBtn)) {
