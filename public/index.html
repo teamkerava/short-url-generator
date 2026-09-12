@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>shorten_ — url + image short links</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="/">shorten<b>_</b></a>
+            <nav><a href="/api/docs">docs</a><a href="https://github.com/teamkerava/short-url-generator" target="_blank" rel="noopener">github</a></nav>
+        </header>
+
+        <h1>Short links, nothing else.</h1>
+        <p class="sub">Paste a URL or drop an image. You get a short link back. Links expire — default <code>24h</code>.</p>
+
+        <div class="box">
+            <div class="tabs">
+                <button type="button" id="tab-url" class="active">url → link</button>
+                <button type="button" id="tab-image">image → link</button>
+            </div>
+            <div class="body">
+                <div class="pane active" id="panel-url">
+                    <form id="shortenForm" novalidate>
+                        <label class="lbl" for="urlInput">destination url</label>
+                        <input type="url" id="urlInput" placeholder="https://example.com/long/path" autocomplete="off" spellcheck="false">
+                        <div style="height:14px"></div>
+                        <label class="lbl">expires after</label>
+                        <div class="exp" id="expiryGrid">
+                            <button type="button" data-value="15m">15m</button>
+                            <button type="button" data-value="1h">1h</button>
+                            <button type="button" data-value="24h" class="on">24h</button>
+                            <button type="button" data-value="1w">1w</button>
+                            <button type="button" data-value="custom">custom</button>
+                        </div>
+                        <div id="customRow"><input type="text" id="durationInput" placeholder="45m, 36h, 10d"></div>
+                        <label class="check"><input type="checkbox" id="oneTimeCheck"> burn after reading — one-time link</label>
+                        <button type="submit" class="submit" id="shortenBtn">shorten →</button>
+                    </form>
+                </div>
+                <div class="pane" id="panel-image">
+                    <form id="uploadForm" novalidate>
+                        <label class="lbl">image file — png jpg gif webp svg avif bmp ico, max 10mb</label>
+                        <div class="drop" id="dropzone" tabindex="0">drop image here or click to browse<input type="file" id="imageName" accept="image/*"></div>
+                        <div class="fileline" id="filePreview"><span id="fileName">—</span><button type="button" id="fileRemove">remove</button></div>
+                        <div style="height:14px"></div>
+                        <label class="lbl">expires after</label>
+                        <div class="exp" id="imageExpiryGrid">
+                            <button type="button" data-value="15m">15m</button>
+                            <button type="button" data-value="1h">1h</button>
+                            <button type="button" data-value="24h" class="on">24h</button>
+                            <button type="button" data-value="1w">1w</button>
+                            <button type="button" data-value="custom">custom</button>
+                        </div>
+                        <div id="imageCustomRow"><input type="text" id="imageDurationInput" placeholder="45m, 36h, 10d"></div>
+                        <label class="check"><input type="checkbox" id="imageOneTimeCheck"> burn after reading — one-time link</label>
+                        <button type="submit" class="submit" id="uploadBtn">upload →</button>
+                    </form>
+                </div>
+                <div id="result" aria-live="polite"></div>
+            </div>
+        </div>
+
+        <div class="routes">
+            <div><b>POST</b> /api/shorten &nbsp;— { url, duration?, oneTime? }</div>
+            <div><b>POST</b> /api/upload &nbsp;&nbsp;— multipart, field=image (+ duration?, oneTime?)</div>
+            <div><b>GET</b> &nbsp;/:code &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 301, 404, or 410 when expired</div>
+        </div>
+
+        <footer><a href="/api/docs">api docs</a> · <a href="https://github.com/teamkerava/short-url-generator" target="_blank" rel="noopener">source</a></footer>
+    </div>
+
+    <script src="/app.js" defer></script>
+</body>
+</html>
