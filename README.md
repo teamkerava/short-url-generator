@@ -14,29 +14,28 @@ A serverless URL shortener built with Cloudflare Workers, TypeScript, and Cloudf
 - One-time (burn-after-reading) links via `oneTime: true`
 - Automatic URL validation and normalization
 
-### Image Upload Service (Phase 1)
+### Image Upload Service
 - Upload images via multipart/form-data
 - Images stored in Cloudflare R2 bucket
 - Get short links: `/img/:code`
 - One-time (burn-after-reading) image links via `oneTime` form field
 - Serve optimized images with proper headers
 
-### Service Enhancements
-- Click analytics via KV counters
-- Password protection (optional)
-- QR code generation support
-- Batch shortening capability
-
 ## Prerequisites
 
 - [bun](https://bun.sh/) (v1.0+)
-- [Wrangler CLI](https://developers.cloudflare.com/workwranger/install/) (v4.0+)
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (v4.0+)
 
 ## Cloudflare Setup
 
-### 1. Create KV Namespace
+### 1. Log in to Cloudflare
 ```bash
-npx wrangler kv namespace create SHORT_URLS
+wrangler login
+```
+
+### 2. Create KV Namespace
+```bash
+wrangler kv namespace create SHORT_URLS
 ```
 
 Add the returned ID to `wrangler.toml`:
@@ -46,14 +45,9 @@ binding = "SHORT_URLS"
 id = "YOUR_KV_NAMESPACE_ID"
 ```
 
-### 2. Create R2 Bucket (for Image Upload)
+### 3. Create R2 Bucket (for Image Upload)
 ```bash
-npx wrangler r2 bucket create short-url-images
-```
-
-### 3. Log in to Cloudflare
-```bash
-wrangler login
+wrangler r2 bucket create short-url-images
 ```
 
 ## Local Development
@@ -75,69 +69,57 @@ You can toggle between:
 
 ## API Reference
 
-### POST /api/shorten
-Creates a new short URL.
+### `POST /api/shorten`
+Shorten a URL.
 
-**Request:**
-```json
-{
-  "url": "https://www.example.com",
-  "duration": "24h",
-  "oneTime": true
-}
+```bash
+curl -X POST https://your-worker.workers.dev/api/shorten \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","duration":"24h","oneTime":true}'
 ```
 
-**Parameters:**
-- `url` (required): The URL to shorten
-- `duration` (optional): Expiration. Options: `15m`, `1h`, `1d`, `1w`, or custom (e.g., `36h`, `10d`). Default: `24h`
-- `oneTime` (optional): When `true`, the link is deleted on first view (burn after reading). Second view returns 404. Served with `Cache-Control: no-store`.
+- `url` (required): http(s) only.
+- `duration` (optional): `15m`, `1h`, `24h` (default), `1w`, or custom like `36h`.
+- `oneTime` (optional): `true` burns the link after the first view.
 
-**Response:**
 ```json
 {
-  "code": "abc12",
-  "shortUrl": "https://your-worker.workers.dev/abc12",
+  "code": "abc123",
+  "shortUrl": "https://your-worker.workers.dev/abc123",
   "expiresAt": "2024-01-01T00:00:00.000Z",
   "oneTime": true
 }
 ```
 
-### POST /api/upload
-Upload an image to R2 storage.
+### `POST /api/upload`
+Upload an image, get a link back. Max 10 MB: png jpeg gif webp svg avif bmp ico.
 
-**Request:** `multipart/form-data`
-- Field: `image` (file)
-- Field: `duration` (optional text, e.g. `15m`, `1h`, `24h` default, `1w`, custom `36h`)
-- Field: `oneTime` (optional, `true`/`1`): delete the image after the first view
+```bash
+curl -X POST https://your-worker.workers.dev/api/upload \
+  -F image=@cat.png -F duration=24h -F oneTime=true
+```
 
-**Response:**
+- `image` (required): the file.
+- `duration` (optional): same values as above.
+- `oneTime` (optional, `true`/`1`): burns the link after the first view.
+
 ```json
 {
-  "code": "xyz789",           // Short code / R2 filename
-  "shortUrl": "https://your-worker.workers.dev/img/xyz789",
+  "code": "a1b2c3d4.png",
+  "shortUrl": "https://your-worker.workers.dev/img/a1b2c3d4.png",
   "originalMimeType": "image/png",
-  "expiresAt": "2024-01-02T00:00:00.000Z",
-  "oneTime": true
+  "expiresAt": "2024-01-02T00:00:00.000Z"
 }
 ```
 
-### GET /:code
-Redirects to the original URL.
+### `GET /:code`
+`301` to target. `404` if unknown (or already burned). `410` if expired. One-time links are served with `Cache-Control: no-store`.
 
-- Returns 301 Redirect if found
-- Returns 404 Not Found if code doesn't exist
-- Returns 410 if URL has expired
-- One-time links are deleted on first view (second view returns 404; redirect served with `Cache-Control: no-store`)
+### `GET /img/:code`
+Serves the image. `404` if missing (or already burned). `410` if expired. One-time images are served with `Cache-Control: no-store`.
 
-### GET /img/:code
-Serves image from R2 bucket with proper Content-Type headers and caching.
-
-- Returns 404 Not Found if the image doesn't exist
-- Returns 410 if the image has expired (expired objects are deleted on access)
-- One-time images are deleted after the first serve (served with `Cache-Control: no-store`)
-
-### GET /api/docs
-Returns HTML API documentation.
+### Notes
+Links expire — default `24h`. Expired entries return `410` and are deleted on access. Errors look like `{"error": "..."}` with a matching status code. Full version at `GET /api/docs`.
 
 ## Deployment
 
@@ -150,18 +132,8 @@ Or individually:
 npx wrangler deploy
 ```
 
-## Cost (Free Plan)
-
-| Service | Free Tier | Project Usage |
-|---------|-----------|---------------|
-| Workers | 100K requests/day | ~10K daily active users |
-| KV | 100K reads/writes/day | ~1K URLs |
-| R2 | 10GB storage, 1GB outbound | ~100 images |
-
-**Total: $0/month** within Cloudflare free limits
-
 ## Development
 
 - TypeScript strict mode: `npx tsc --noEmit`
 - Linting: `npx tsc --noEmit` (via lint-staged pre-commit)
-- Tests: `bun test` (4/6 tests pass; 2 pre-existing unrelated failures)
+- Tests: `bun test`
