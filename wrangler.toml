@@ -1,9 +1,21 @@
 name = "short-url-worker"
 main = "src/index.ts"
-compatibility_date = "2024-02-08"
+compatibility_date = "2026-09-12"
+
+# Static assets (public/): served by Cloudflare with caching, before the
+# Worker runs. Unmatched requests fall through to the Worker below.
+[assets]
+directory = "./public"
+binding = "ASSETS"
 
 # KV Namespace Bindings
 # To generate this ID, run: npx wrangler kv namespace create SHORT_URLS
 [[kv_namespaces]]
 binding = "SHORT_URLS"
 id = "69c7cf8a99a54eadb89c230c8f4b5a06"
+
+# R2 Image Bucket Binding
+# To create this bucket, run: npx wrangler r2 bucket create short-url-images
+[[r2_buckets]]
+binding = "IMAGE_R2"
+bucket_name = "short-url-images"

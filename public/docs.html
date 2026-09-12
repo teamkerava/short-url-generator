@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docs — shorten_</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="wrap docs">
+    <header><a class="logo" href="/">shorten_</a></header>
+    <p class="back"><a href="/">← back</a></p>
+    <h1>api docs</h1>
+
+    <h2><span class="m post">POST</span> /api/shorten</h2>
+    <p>shorten a url.</p>
+    <pre><code>curl -X POST https://yourdomain.com/api/shorten \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","duration":"24h","oneTime":true}'</code></pre>
+    <ul>
+        <li><code>url</code> — required. http(s) only.</li>
+        <li><code>duration</code> — optional. <code>15m</code>, <code>1h</code>, <code>24h</code> (default), <code>1w</code>, or custom like <code>36h</code>.</li>
+        <li><code>oneTime</code> — optional. <code>true</code> burns the link after the first view.</li>
+    </ul>
+    <pre><code>{
+  "code": "abc123",
+  "shortUrl": "https://yourdomain.com/abc123",
+  "expiresAt": "2026-09-13T12:00:00.000Z",
+  "oneTime": true
+}</code></pre>
+
+    <h2><span class="m post">POST</span> /api/upload</h2>
+    <p>upload an image, get a link back. max 10mb: png jpeg gif webp svg avif bmp ico.</p>
+    <pre><code>curl -X POST https://yourdomain.com/api/upload \
+  -F image=@cat.png -F duration=24h -F oneTime=true</code></pre>
+    <ul>
+        <li><code>image</code> — required. the file.</li>
+        <li><code>duration</code> — optional, same values as above.</li>
+        <li><code>oneTime</code> — optional (<code>true</code>/<code>1</code>). burns the link after the first view.</li>
+    </ul>
+    <pre><code>{
+  "code": "a1b2c3d4.png",
+  "shortUrl": "https://yourdomain.com/img/a1b2c3d4.png",
+  "originalMimeType": "image/png",
+  "expiresAt": "2026-09-13T12:00:00.000Z"
+}</code></pre>
+
+    <h2><span class="m get">GET</span> /:code</h2>
+    <p><code>301</code> to target. <code>404</code> if unknown (or already burned). <code>410</code> if expired. one-time links are served with <code>no-store</code>.</p>
+
+    <h2><span class="m get">GET</span> /img/:code</h2>
+    <p>serves the image. <code>404</code> if missing (or already burned). <code>410</code> if expired. one-time images are served with <code>no-store</code>.</p>
+
+    <h2>notes</h2>
+    <p>links expire — default <code>24h</code>. expired entries return <code>410</code> and are deleted on access. errors look like <code>{"error": "..."}</code> with a matching status code.</p>
+    </div>
+</body>
+</html>

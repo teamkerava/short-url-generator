@@ -18,8 +18,13 @@ The system is designed to be a high-performance, low-latency URL shortener. It l
 
 ```
 ├── src/
-│   ├── index.ts       # Main worker logic and routes
-│   ├── html.ts        # Frontend web interface HTML
+│   ├── index.ts       # Router wiring (registers routes, serves /api/docs)
+│   ├── lib/
+│   │   ├── types.ts     # Shared types: Env, ShortUrlData, ShortenRequest
+│   │   └── utils.ts     # generateShortCode, parseDuration, expiryUrl, parseOneTime
+│   ├── routes/
+│   │   ├── shorten.ts   # POST /api/shorten + GET /:code (incl. one-time links)
+│   │   └── upload.ts    # POST /api/upload + GET /img/:code (incl. one-time images)
 │   └── index.test.ts  # Unit tests
 ├── scripts/
 │   ├── test-local-kv.sh    # KV testing script
@@ -31,18 +36,20 @@ The system is designed to be a high-performance, low-latency URL shortener. It l
 
 ## Components
 
-### 1. The Worker (`src/index.ts`)
-The core logic resides in a single Cloudflare Worker. It handles incoming HTTP requests, routes them to the appropriate handler, and manages interactions with the KV store.
+### 1. The Worker (`src/index.ts`, `src/routes/`, `src/lib/`)
+Route handlers live in feature modules (`src/routes/shorten.ts` for short URLs, `src/routes/upload.ts` for images); shared types and helpers live in `src/lib/`. `src/index.ts` only wires the router, serves `/api/docs`, and re-exports the helpers for tests.
 
 ### 2. Router
 We use `itty-router` to handle API routes. It maps HTTP methods and paths to specific handler functions.
 
-### 3. Frontend (`src/html.ts`)
-A built-in web interface served at the root URL (`/`). Users can enter a URL to shorten directly from their browser.
+### 3. Frontend (`public/index.html`, `public/styles.css`, `public/app.js`, `public/docs.html`)
+A built-in web interface served as static assets at the root URL (`/`). Users can enter a URL to shorten directly from their browser.
 
 Features:
 - One-click copy button using the modern Clipboard API
 - Configurable URL expiration (15 minutes, 1 hour, 1 day, 24 hours default, 1 week, or custom)
+- Configurable image expiration, same options (stored as R2 `customMetadata.expiresAt`, default 24 hours)
+- One-time (burn-after-reading) links for URLs (`oneTime` JSON flag) and images (`oneTime` form field); deleted on first view/serve with `Cache-Control: no-store`
 - Automatic form submission on Enter key
 - Visual feedback for copy success/failure
 
@@ -69,14 +76,14 @@ Serves HTML API documentation.
 ### 3. POST /api/shorten
 - **Method**: `POST`
 - **Path**: `/api/shorten`
-- **Body**: `{ "url": "https://example.com", "duration": "24h" }`
+- **Body**: `{ "url": "https://example.com", "duration": "24h", "oneTime": true }`
 - **Process**:
     1.  Validates and parses the input JSON
     2.  Normalizes the URL (adds `https://` if missing)
     3.  Validates the URL format
     4.  Generates a unique short code
     5.  Calculates an expiration date (default: 24 hours, or custom duration)
-    6.  Stores the mapping `code -> { url, createdAt, expiresAt }` in KV
+    6.  Stores the mapping `code -> { url, createdAt, expiresAt, oneTime? }` in KV
     7.  Returns the constructed short URL
 
 **Duration Options:**
@@ -96,6 +103,7 @@ Serves HTML API documentation.
     3.  If found:
         - Parses the value (handles legacy string values or new JSON format)
         - Checks if the URL has expired
+        - If `oneTime`, deletes the KV entry and redirects with `Cache-Control: no-store` (second view 404s)
         - Redirects (`301`) to the target URL
     4.  If not found: Returns a `404 Not Found`
     5.  If expired: Returns a `410 Gone`
