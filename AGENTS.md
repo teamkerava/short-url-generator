@@ -1,62 +1,50 @@
-# AGENTS.md - Short URL Generator
+# AGENTS.md — short-url-worker (Cloudflare Workers URL shortener + image host)
 
 ## Commands
 
 | Action | Command |
 |--------|---------|
 | Install deps | `bun install` |
-| Start dev server | `bun start` (runs `wrangler dev`, emulates Worker on port 8787) |
+| Dev server | `bun start` (`wrangler dev`, port 8787, emulates KV/R2 locally) |
 | Deploy | `bun run deploy` |
-| Run all tests | `bun test` |
-| Lint (tsc check) | `npx tsc --noEmit` (via lint-staged on `.ts` files) |
+| Tests | `bun test` (single file: `src/index.test.ts`) |
+| Lint/typecheck | `npx tsc --noEmit` (strict; this *is* the linter, via lint-staged on `*.ts`) |
 
-## Key Code Patterns
+- `wrangler` CLI requires **Node ≥ 22**. If `bun start` dies with a Node-version error, that's why (system node here is v20) — use bun for tests/typecheck instead.
+- Pre-commit hook (`.husky/pre-commit`) runs `bunx tsc --noEmit` on the whole project and **blocks** the commit on failure. It's intentionally *not* lint-staged: lint-staged would pass staged filenames to `tsc`, which then ignores `tsconfig.json` (hard `TS5112` error on modern tsc). `bun test` is deliberately *not* in the hook — 2 tests fail on purpose (see below).
 
-- **Layout**: `src/index.ts` wires the router; shared code lives in `src/lib/{types,utils}.ts`; feature routes live in `src/routes/{shorten,upload}.ts`
-- **`generateShortCode(length=6)`** (`src/lib/utils.ts`): generates random alphanumeric code from `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`
-- **`parseDuration(duration)`** (`src/lib/utils.ts`): parses strings like `'15m'`, `'1h'`, `'1d'`, `'24h'`, `'1w'`; returns hours as number. Defaults to `24` if undefined.
-- **`expiryUrl(url, duration=24)`** (`src/lib/utils.ts`): returns `{ url, expiresAt: ISO string }` based on `Date.now() + hours * 3600000`
-- **`parseOneTime(value)`** (`src/lib/utils.ts`): normalizes one-time flags from JSON booleans and form strings (`"true"`/`"1"`/`"on"`)
-- **URL normalization**: `new URL(normalizedUrl)` validates and normalizes; only `http:`/`https:` protocols allowed
-- **KV `put`**: stores `JSON.stringify(kv_value)` (`{ url, createdAt, expiresAt, oneTime? }`) under generated short code
-- **KV `get`**: attempts `JSON.parse(value)`; falls back to treating value as plain string URL; checks `expiresAt` against `new Date()` for 410 Gone; one-time entries are `delete`d on first read and redirect with `Cache-Control: no-store`
-- **R2 `put`**: stores image bytes under generated filename; `customMetadata: { expiresAt, onetime? }` holds ISO expiry (default `24h`, configurable via `duration` form field) plus optional one-time flag (`oneTime` form field; lowercase key since metadata travels as case-insensitive `x-amz-meta-*` headers)
-- **R2 `get`**: checks `customMetadata.expiresAt` against `new Date()`; deletes the object and returns 410 Gone if expired; one-time objects are deleted after first serve with `Cache-Control: no-store`; otherwise caps `Cache-Control: max-age` at remaining TTL
+## Layout
 
-## KV & Bindings
+- `src/index.ts` only wires the router (`itty-router` `AutoRouter`) and re-exports lib helpers for tests. Handlers live in `src/routes/shorten.ts` (`POST /api/shorten`, `GET /:code`) and `src/routes/upload.ts` (`POST /api/upload`, `GET /img/:code`); shared types/helpers in `src/lib/{types,utils}.ts`.
+- `public/` is served by the platform **before** the Worker runs (`[assets]` + `ASSETS` binding in `wrangler.toml`). `GET /` never reaches the Worker; API docs are edited directly in `public/docs.html`. Frontend (`app.js`) is vanilla JS, no build step.
 
-- Namespace `SHORT_URLS` bound in `wrangler.toml`; ID `69c7cf8a99a54eadb89c230c8f4b5a06`
-- R2 bucket `IMAGE_R2` for image uploads
+## Gotchas (read before touching read paths)
 
-## API Endpoints (from `src/index.ts`)
+- **Never fetch a one-time URL except to consume it.** Any GET burns it (entry deleted, second view 404s). The frontend previews one-time images via local `URL.createObjectURL`, never via the server URL — keep it that way.
+- **R2 `customMetadata` keys: write lowercase (`onetime`), accept both cases on read.** Metadata travels as case-insensitive `x-amz-meta-*` headers and may come back lowercased; mocks preserve case, production may not.
+- **KV values have two formats**: legacy plain-string URLs and current JSON `{ url, createdAt, expiresAt, oneTime? }`. `GET /:code` must handle both.
+- **Deletes are best-effort** (try/catch, e.g. expiry cleanup, one-time burn). Concurrent first-readers can race the burn — KV/R2 have no atomic take.
+- **One-time redirects can't use `Response.redirect()`** — it's built manually (`new Response(null, { status: 301, headers: { Location, 'Cache-Control': 'no-store' } })`) because redirect responses need the `no-store` header.
+- **2 tests fail on purpose (for now)**: `src/index.test.ts:48,63` assert `Location` without trailing slash, but `Response.redirect()` normalizes `https://example.com` → `https://example.com/`. Baseline is 20 pass / 2 fail — don't "fix" handler behavior to satisfy them.
+- **Test mocks must include `delete`** on KV/R2 envs or one-time/expiry paths throw. Call pattern: `worker.fetch(request, mockEnv as any, {} as any)`.
+- Error messages are deliberately snarky (site voice). Keep status codes stable — tests and the frontend (`data.error`) depend on them, not on message text.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/shorten` | Create short URL. Body: `{ url, duration?, oneTime? }`. Returns `{ code, shortUrl, expiresAt, oneTime? }` |
-| `POST` | `/api/upload` | Upload image. Multipart fields: `image` (file), `duration?`, `oneTime?`. Returns `{ code, shortUrl, originalMimeType, expiresAt, oneTime? }` |
-| `GET` | `/` | Serves frontend HTML |
-| `GET` | `/api/docs` | Serves API docs HTML |
-| `GET` | `/:code` | Redirects to original URL (301). Returns 404 if not found, 410 if expired. One-time links are deleted on first view |
-| `GET` | `/img/:code` | Serves image from R2 bucket (404 if missing, 410 if expired). One-time images are deleted after first serve |
+## Bindings (`wrangler.toml`; setup commands in its comments)
 
-## Testing (`bun:test`)
+- KV `SHORT_URLS` (id `69c7cf8a99a54eadb89c230c8f4b5a06`), R2 `IMAGE_R2` (bucket `short-url-images`), `ASSETS` (static files). No AI binding (removed).
 
-- Tests in `src/index.test.ts` use `bun:test` with `mock` for KV
-- Mock env: `SHORT_URLS` has `put` (mock) and `get` (returns stored string or JSON)
-- Test flow: `worker.fetch(request, mockEnv, {})` — pass the worker's fetch handler your mock env
-- Run: `bun test`
+## API
 
-## Scripts (`scripts/`)
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/shorten` | Body `{ url, duration?, oneTime? }` → `{ code, shortUrl, expiresAt, oneTime? }`, 201. Durations: `15m`, `1h`, `24h` (default), `1w`, custom `36h`. |
+| `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, fixed allowlist in `upload.ts`. |
+| `GET` | `/:code` | 301 (regular) / 301 + `no-store` + delete (one-time) / 404 / 410 expired. |
+| `GET` | `/img/:code` | Same semantics; non-one-time `Cache-Control: max-age` capped at remaining TTL (max 86400s). |
+| `GET` | `/api/docs` | Serves `public/docs.html` via `ASSETS`. |
 
-| Script | Purpose |
-|--------|---------|
-| `./scripts/test-local-kv.sh` | Creates a short URL via curl, then inspects KV content with `wrangler kv key get` |
-| `./scripts/test-local-curl.sh [duration]` | Quick curl POST to `/api/shorten` |
-| `./scripts/check-local-kv-value.sh <code>` | Look up a specific KV key value locally |
+## Scripts (`scripts/`, need dev server running)
 
-## Environment
-
-- Requires `bun`
-- Requires Wrangler CLI (devDependency; `wrangler dev` / `wrangler deploy`)
-- KV namespace `SHORT_URLS` must be created in Cloudflare dashboard/CLI if deploying
-- `wrangler login` for deploy access
+- `./scripts/test-local-curl.sh [duration]` — quick `POST /api/shorten`.
+- `./scripts/test-local-kv.sh` — shorten, then inspect KV via `wrangler kv key get`.
+- `./scripts/check-local-kv-value.sh <code>` — read one KV key locally.
