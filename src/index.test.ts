@@ -217,6 +217,18 @@ describe("Short URL Generator", () => {
       expect(response.status).toBe(400);
     });
 
+    test("POST /api/upload allows exactly 30 days", async () => {
+      const response = await upload("30d");
+      expect(response.status).toBe(201);
+    });
+
+    test("POST /api/upload rejects image durations over 30 days", async () => {
+      for (const duration of ["31d", "5w", "721h"]) {
+        const response = await upload(duration);
+        expect(response.status).toBe(400);
+      }
+    });
+
     test("GET /img/:code returns 410 and deletes an expired image", async () => {
       const uploadRes = await upload("15m");
       const { code } = await uploadRes.json();

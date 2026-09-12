@@ -38,7 +38,7 @@
 | Method | Path | Notes |
 |--------|------|-------|
 | `POST` | `/api/shorten` | Body `{ url, duration?, oneTime? }` → `{ code, shortUrl, expiresAt, oneTime? }`, 201. Durations: `15m`, `1h`, `24h` (default), `1w`, custom `36h`. |
-| `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, fixed allowlist in `upload.ts`. |
+| `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, fixed allowlist in `upload.ts`. Image TTL capped at 30d (`MAX_IMAGE_TTL_HOURS`); R2 lifecycle policy deletes all objects after 30 days. |
 | `GET` | `/:code` | 301 (regular) / 301 + `no-store` + delete (one-time) / 404 / 410 expired. |
 | `GET` | `/img/:code` | Same semantics; non-one-time `Cache-Control: max-age` capped at remaining TTL (max 86400s). |
 | `GET` | `/api/docs` | Serves `public/docs.html` via `ASSETS`. |

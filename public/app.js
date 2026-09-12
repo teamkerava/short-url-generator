@@ -4,7 +4,16 @@ var panelUrl = document.getElementById('panel-url');
 var panelImage = document.getElementById('panel-image');
 var resultDiv = document.getElementById('result');
 
-function switchTab(which) {
+var TAB_KEY = 'shorten.defaultTab';
+
+function loadTab() {
+    try { return localStorage.getItem(TAB_KEY); } catch (err) { return null; }
+}
+function saveTab(which) {
+    try { localStorage.setItem(TAB_KEY, which); } catch (err) {}
+}
+
+function switchTab(which, save) {
     var isUrl = which === 'url';
     tabUrl.classList.toggle('active', isUrl);
     tabImage.classList.toggle('active', !isUrl);
@@ -12,6 +21,7 @@ function switchTab(which) {
     panelImage.classList.toggle('active', !isUrl);
     resultDiv.classList.remove('show');
     resultDiv.innerHTML = '';
+    if (save !== false) saveTab(which);
     if (isUrl) document.getElementById('urlInput').focus();
 }
 tabUrl.onclick = function () { switchTab('url'); };
@@ -219,4 +229,9 @@ uploadForm.onsubmit = async function (e) {
     uploadBtn.textContent = 'upload →';
 };
 
-window.onload = function () { urlInput.focus(); };
+window.onload = function () {
+    // Restore the last-used tab so image-first users land on image → link.
+    // localStorage persists across restarts until site data is cleared.
+    if (loadTab() === 'image') switchTab('image', false);
+    else urlInput.focus();
+};

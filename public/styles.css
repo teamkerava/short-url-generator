@@ -137,6 +137,12 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 #customRow.show { display: block; }
 #imageCustomRow { display: none; margin-top: 8px; }
 #imageCustomRow.show { display: block; }
+.note {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin: 10px 0 0;
+}
 .submit {
     width: 100%;
     margin-top: 16px;
@@ -240,14 +246,6 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
     font-family: var(--mono);
     font-size: 0.83rem;
 }
-footer {
-    margin-top: 22px;
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    color: var(--muted);
-}
-footer a { color: var(--muted); }
-footer a:hover { color: var(--ink); }
 
 /* api docs page — reuses the base above */
 a { color: var(--accent-ink); }

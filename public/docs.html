@@ -51,9 +51,10 @@
   -F image=@cat.png -F duration=24h -F oneTime=true</code></pre>
     <ul>
         <li><code>image</code> — required. the file.</li>
-        <li><code>duration</code> — optional, same values as above.</li>
+        <li><code>duration</code> — optional, same values as above, 30 days max.</li>
         <li><code>oneTime</code> — optional (<code>true</code>/<code>1</code>). burns the link after the first view.</li>
     </ul>
+    <p>images are deleted automatically after 30 days at the latest.</p>
     <pre><code>{
   "code": "a1b2c3d4.png",
   "shortUrl": "https://yourdomain.com/img/a1b2c3d4.png",

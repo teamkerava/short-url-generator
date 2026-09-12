@@ -1,12 +1,16 @@
 import { error } from 'itty-router';
 import type { Env, Request } from '../lib/types';
-import { expiryUrl, generateShortCode, parseOneTime } from '../lib/utils';
+import { expiryUrl, generateShortCode, parseDuration, parseOneTime } from '../lib/utils';
 
 // POST /api/upload
 // Request body: multipart/form-data with "image" field,
 // optional "duration" field and optional "oneTime" flag.
+// Images live 30 days max — longer durations are rejected.
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Max image TTL in hours (30 days). Enforced so the "auto-deleted after 30 days" note stays true. */
+export const MAX_IMAGE_TTL_HOURS = 30 * 24;
 
 const ALLOWED_IMAGE_TYPES: Record<string, string> = {
   'image/png': 'png',
@@ -62,6 +66,10 @@ export const handleUpload = async (request: Request, env: Env) => {
 
   let expiresAt: string;
   try {
+    const ttlHours = parseDuration(duration);
+    if (ttlHours > MAX_IMAGE_TTL_HOURS) {
+      return error(400, "Images live 30 days max — pick a shorter duration. Nothing hosted here is forever.");
+    }
     expiresAt = expiryUrl(fileName, duration).expiresAt;
   } catch (err) {
     return error(400, (err as Error).message);
