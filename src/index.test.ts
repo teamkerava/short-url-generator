@@ -33,7 +33,7 @@ describe("Short URL Generator", () => {
 
     const response = await worker.fetch(request, mockEnv as any, {} as any);
     expect(response.status).toBe(201);
-    
+
     const body = await response.json();
     expect(body).toHaveProperty("code");
     expect(body).toHaveProperty("shortUrl");
@@ -43,24 +43,24 @@ describe("Short URL Generator", () => {
   test("GET /:code redirects to original URL", async () => {
     const request = new Request("http://localhost/testcode");
     const response = await worker.fetch(request, mockEnv as any, {} as any);
-    
+
     expect(response.status).toBe(301);
-    expect(response.headers.get("Location")).toBe("https://example.com");
+    expect(response.headers.get("Location")).toBe("https://example.com/");
   });
 
   test("GET /:code returns 404 for unknown code", async () => {
     const request = new Request("http://localhost/unknown");
     const response = await worker.fetch(request, mockEnv as any, {} as any);
-    
+
     expect(response.status).toBe(404);
   });
 
   test("GET /:code handles JSON stored values", async () => {
     const request = new Request("http://localhost/jsoncode");
     const response = await worker.fetch(request, mockEnv as any, {} as any);
-    
+
     expect(response.status).toBe(301);
-    expect(response.headers.get("Location")).toBe("https://example.org");
+    expect(response.headers.get("Location")).toBe("https://example.org/");
   });
 
   const r2Store = new Map<string, { body: ArrayBuffer; contentType: string }>();
