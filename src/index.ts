@@ -29,7 +29,7 @@ router.get('/img/:code', async (request: Request, env: Env) => handleServeImage(
 router.all('*', () => error(404, "Not found. But hey, at least you tried, right?"));
 
 // Re-export shared helpers so existing imports from "./index" keep working.
-export { expiryUrl, generateShortCode, parseDuration, parseOneTime } from './lib/utils';
+export { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp, RATE_LIMITS } from './lib/utils';
 export type { Env, Request, ShortUrlData, ShortenRequest } from './lib/types';
 
 export default {

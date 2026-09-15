@@ -34,12 +34,12 @@
         <p class="sub">Paste a URL or drop an image. You get a short link back. Links expire — default <code>24h</code>.</p>
 
         <div class="box">
-            <div class="tabs">
-                <button type="button" id="tab-url" class="active">url → link</button>
-                <button type="button" id="tab-image">image → link</button>
+            <div class="tabs" role="tablist" aria-label="shorten modes">
+                <button type="button" id="tab-url" class="active" role="tab" aria-selected="true" aria-controls="panel-url">url → link</button>
+                <button type="button" id="tab-image" role="tab" aria-selected="false" aria-controls="panel-image">image → link</button>
             </div>
             <div class="body">
-                <div class="pane active" id="panel-url">
+                <div class="pane active" id="panel-url" role="tabpanel" aria-labelledby="tab-url">
                     <form id="shortenForm" novalidate>
                         <label class="lbl" for="urlInput">destination url</label>
                         <input type="url" id="urlInput" placeholder="https://example.com/long/path" autocomplete="off" spellcheck="false">
@@ -54,14 +54,15 @@
                         </div>
                         <div id="customRow"><input type="text" id="durationInput" placeholder="45m, 36h, 10d"></div>
                         <label class="check"><input type="checkbox" id="oneTimeCheck"> burn after reading — one-time link</label>
+                        <p class="note">one-time links burn on first view — chat previews and bots fetch links too, so they may burn it before your recipient opens it.</p>
                         <button type="submit" class="submit" id="shortenBtn">shorten →</button>
                     </form>
                 </div>
-                <div class="pane" id="panel-image">
+                <div class="pane" id="panel-image" role="tabpanel" aria-labelledby="tab-image">
                     <form id="uploadForm" novalidate>
-                        <label class="lbl">image file — png jpg gif webp svg avif bmp ico, max 10mb</label>
-                        <div class="drop" id="dropzone" tabindex="0">drop image here or click to browse<input type="file" id="imageName" accept="image/*"></div>
-                        <div class="fileline" id="filePreview"><span id="fileName">—</span><button type="button" id="fileRemove">remove</button></div>
+                        <label class="lbl">image file — png jpg gif webp, max 10mb</label>
+                        <div class="drop" id="dropzone" tabindex="0" role="button" aria-label="choose an image: drop a file, paste from clipboard, or press enter to browse">drop image here, paste from clipboard, or click to browse<input type="file" id="imageName" accept="image/png,image/jpeg,image/gif,image/webp"></div>
+                        <div class="fileline" id="filePreview"><img id="fileThumb" alt=""><span id="fileName">—</span><button type="button" id="fileRemove">remove</button></div>
                         <div style="height:14px"></div>
                         <label class="lbl">expires after</label>
                         <div class="exp" id="imageExpiryGrid">
@@ -74,6 +75,8 @@
                         <div id="imageCustomRow"><input type="text" id="imageDurationInput" placeholder="45m, 36h, 10d"></div>
                         <p class="note">images are deleted automatically after 30 days at the latest.</p>
                         <label class="check"><input type="checkbox" id="imageOneTimeCheck"> burn after reading — one-time link</label>
+                        <p class="note">one-time links burn on first view — chat previews and bots fetch links too, so they may burn it before your recipient opens it.</p>
+                        <div class="progress" id="uploadProgress"><div class="track"><div id="uploadBar"></div></div><button type="button" id="uploadCancel">cancel</button></div>
                         <button type="submit" class="submit" id="uploadBtn">upload →</button>
                     </form>
                 </div>
