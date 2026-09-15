@@ -24,7 +24,8 @@
 - `public/` is served by the platform **before** the Worker runs (`[assets]` + `ASSETS` binding in `wrangler.toml`). `GET /` never reaches the Worker; API docs are edited directly in `public/docs.html`. Frontend (`app.js`) is vanilla JS, no build step.
 - Header is the only nav (no footer — it was removed as redundant). The repo link in the header points at `github.com/teamkerava/shorten`.
 - Embed previews: `index.html`/`docs.html` carry Open Graph + Twitter Card tags with absolute prod URLs (`https://url.imuroin.net/...`) and `public/og-image.png` (1200×630, generated from SVG via `sharp`). Keep the absolute URLs in sync if the domain ever changes. Short-link (`/:code`) embeds resolve to the *target's* preview (bare 301); `/img/:code` embeds as a raw image.
-- The active tab (url/image) persists in `localStorage` under key `shorten.defaultTab`; tab switches save it, page load restores it (try/catch — private mode may throw).
+- The active tab (url/image) persists in a `shorten.defaultTab` cookie (1yr, `SameSite=Lax`); tab switches save it, page load restores it (try/catch — private mode may throw).
+- The image pane accepts clipboard images (paste anywhere picks up `image/*` from `clipboardData`, switches to the image tab, loads the file into the form); the dropzone auto-focuses whenever the image tab becomes active so paste works immediately.
 - The image pane shows a "deleted automatically after 30 days" note — it's load-bearing (enforced cap + R2 lifecycle, below), keep it if you touch that pane.
 
 ## Gotchas (read before touching read paths)

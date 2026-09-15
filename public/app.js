@@ -7,10 +7,13 @@ var resultDiv = document.getElementById('result');
 var TAB_KEY = 'shorten.defaultTab';
 
 function loadTab() {
-    try { return localStorage.getItem(TAB_KEY); } catch (err) { return null; }
+    try {
+        var m = document.cookie.match(/(?:^|; )shorten\.defaultTab=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : null;
+    } catch (err) { return null; }
 }
 function saveTab(which) {
-    try { localStorage.setItem(TAB_KEY, which); } catch (err) {}
+    try { document.cookie = TAB_KEY + '=' + encodeURIComponent(which) + '; max-age=31536000; path=/; SameSite=Lax'; } catch (err) {}
 }
 
 function switchTab(which, save) {
@@ -23,6 +26,10 @@ function switchTab(which, save) {
     resultDiv.innerHTML = '';
     if (save !== false) saveTab(which);
     if (isUrl) document.getElementById('urlInput').focus();
+    else {
+        // Auto-focus the dropzone so clipboard paste (ctrl/cmd+v) works immediately.
+        try { document.getElementById('dropzone').focus({ preventScroll: true }); } catch (err) {}
+    }
 }
 tabUrl.onclick = function () { switchTab('url'); };
 tabImage.onclick = function () { switchTab('image'); };
@@ -184,6 +191,37 @@ dropzone.addEventListener('drop', function (e) {
     var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) setFile(f);
 });
+// Clipboard upload: pasting an image anywhere picks it up into the image form
+// and switches to the image tab (auto-focusing the dropzone). Text pastes are
+// ignored so normal url pasting keeps working.
+document.addEventListener('paste', function (e) {
+    var cd = e.clipboardData;
+    if (!cd) return;
+    var f = null;
+    if (cd.files && cd.files.length) {
+        for (var i = 0; i < cd.files.length; i++) {
+            if (cd.files[i] && cd.files[i].type && cd.files[i].type.indexOf('image/') === 0) { f = cd.files[i]; break; }
+        }
+    }
+    if (!f && cd.items && cd.items.length) {
+        for (var j = 0; j < cd.items.length; j++) {
+            var it = cd.items[j];
+            if (it.kind === 'file' && it.type && it.type.indexOf('image/') === 0) {
+                var got = it.getAsFile();
+                if (got) { f = got; break; }
+            }
+        }
+    }
+    if (!f) return;
+    // Clipboard files may have an empty/generic name — give them one for the preview line.
+    if (!f.name) {
+        try { f = new File([f], 'pasted-image.png', { type: f.type || 'image/png' }); } catch (err) {}
+    }
+    e.preventDefault();
+    switchTab('image');
+    setFile(f);
+    try { dropzone.focus({ preventScroll: true }); } catch (err) {}
+});
 fileRemove.onclick = function (e) {
     e.stopPropagation();
     fileInput.value = '';
@@ -231,7 +269,7 @@ uploadForm.onsubmit = async function (e) {
 
 window.onload = function () {
     // Restore the last-used tab so image-first users land on image → link.
-    // localStorage persists across restarts until site data is cleared.
+    // Cookie persists ~1 year across restarts until site data is cleared.
     if (loadTab() === 'image') switchTab('image', false);
     else urlInput.focus();
 };

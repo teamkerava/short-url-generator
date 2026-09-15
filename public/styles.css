@@ -169,6 +169,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
     cursor: pointer;
 }
 .drop:hover, .drop.over { border-color: var(--accent-ink); color: var(--ink); }
+.drop:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,0.2); }
 .drop input { display: none; }
 .fileline {
     display: none;
