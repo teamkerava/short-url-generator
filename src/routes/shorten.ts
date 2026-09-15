@@ -1,6 +1,6 @@
 import { error } from 'itty-router';
 import type { Env, Request, ShortUrlData, ShortenRequest } from '../lib/types';
-import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp } from '../lib/utils';
+import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp, oneTimeConfirmResponse } from '../lib/utils';
 
 // POST /api/shorten
 // Request body: { "url": "https://example.com", "duration"?: "24h", "oneTime"?: true }
@@ -74,9 +74,43 @@ export const handleShorten = async (request: Request, env: Env) => {
 };
 
 // GET /:code
-// Redirects to the original URL. One-time links are deleted on first access.
+// Regular links redirect immediately. One-time links render a confirm page —
+// previews/bots only see the page and never burn the entry. The burn happens
+// on POST /:code (the form button), which deletes then redirects.
 
 export const handleRedirect = async (request: Request, env: Env) => {
+  const code = request.params.code;
+  const value = await env.SHORT_URLS.get(code);
+
+  if (!value) {
+    return error(404, `The code '${code}' doesn't exist. Typo? Or it already burned after its one glorious view?`);
+  }
+
+  let targetUrl = value;
+  let oneTime = false;
+  try {
+    const data = JSON.parse(value) as ShortUrlData;
+    if (data.url) {
+      targetUrl = data.url;
+    }
+
+    if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
+      return error(410, "This short URL has expired. What did you expect? Eternal life?");
+    }
+
+    oneTime = data.oneTime === true;
+  } catch (e) {}
+
+  if (oneTime) {
+    return oneTimeConfirmResponse('link');
+  }
+
+  return Response.redirect(targetUrl, 301);
+};
+
+// POST /:code — consumes a one-time link (burn after reading).
+
+export const handleConsumeRedirect = async (request: Request, env: Env) => {
   const code = request.params.code;
   const value = await env.SHORT_URLS.get(code);
 

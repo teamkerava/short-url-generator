@@ -19,12 +19,12 @@
 
 ## Layout
 
-- `src/index.ts` only wires the router (`itty-router` `AutoRouter`) and re-exports lib helpers for tests. Handlers live in `src/routes/shorten.ts` (`POST /api/shorten`, `GET /:code`) and `src/routes/upload.ts` (`POST /api/upload`, `GET /img/:code`); shared types/helpers in `src/lib/{types,utils}.ts`.
+- `src/index.ts` only wires the router (`itty-router` `AutoRouter`) and re-exports lib helpers for tests. Handlers live in `src/routes/shorten.ts` (`POST /api/shorten`, `GET`+`POST /:code`) and `src/routes/upload.ts` (`POST /api/upload`, `GET`+`POST /img/:code`); shared types/helpers in `src/lib/{types,utils}.ts` (`oneTimeConfirmResponse` builds the confirm page).
 - `public/` is served by the platform **before** the Worker runs (`[assets]` + `ASSETS` binding in `wrangler.toml`). `GET /` never reaches the Worker.
 - API docs are edited directly in `public/docs.html`. Frontend (`app.js`) is vanilla JS, no build step.
 - Header is the only nav (no footer). The repo link in the header points at `github.com/teamkerava/shorten`.
 - `index.html`/`docs.html` carry Open Graph + Twitter Card tags with absolute prod URLs (`https://url.imuroin.net/...`) plus `public/og-image.png` (1200×630). Keep the absolute URLs in sync if the domain ever changes.
-- Short-link (`/:code`) embeds resolve to the *target's* preview (bare 301); `/img/:code` embeds as a raw image.
+- Short-link (`/:code`) embeds resolve to the *target's* preview (bare 301); `/img/:code` embeds as a raw image. One-time entries embed as the confirm page (no target/image leak, `no-store` + `noindex`).
 - The active tab (url/image) persists in a `shorten.defaultTab` cookie (1yr, `SameSite=Lax`); tab switches save it, page load restores it (try/catch — private mode may throw).
 - The image pane accepts clipboard images (paste anywhere picks up `image/*` from `clipboardData`, switches to the image tab, loads the file into the form); the dropzone auto-focuses whenever the image tab becomes active so paste works immediately.
 - The image form validates type/size client-side, shows a thumbnail, and uploads via XHR with a progress bar + cancel.
@@ -34,7 +34,7 @@
 
 ## Gotchas (read before touching read paths)
 
-- **Never fetch a one-time URL except to consume it.** Any GET burns it — including chat link-previews and bots — entry deleted, second view 404s. The frontend previews one-time images via local `URL.createObjectURL`, never via the server URL — keep it that way.
+- **One-time links burn only on POST.** `GET` renders a confirm page (`oneTimeConfirmResponse`, no target/image bytes, `no-store` + `noindex`) so chat previews/bots can't burn it; the form `POST` deletes then redirects/serves. The frontend previews one-time images via local `URL.createObjectURL`, never via the server URL — keep it that way.
 - **R2 `customMetadata` keys: write lowercase (`onetime`), accept both cases on read.** Metadata travels as case-insensitive `x-amz-meta-*` headers and may come back lowercased; mocks preserve case, production may not.
 - **KV values have two formats**: legacy plain-string URLs and current JSON `{ url, createdAt, expiresAt, oneTime? }`. `GET /:code` must handle both.
 - **Short-URL KV entries carry native `expirationTtl`** matching the duration (60s minimum); dead entries vanish without a read, and the manual 410 path stays for legacy entries without TTL.
@@ -56,6 +56,8 @@
 |--------|------|-------|
 | `POST` | `/api/shorten` | Body `{ url, duration?, oneTime? }` → `{ code, shortUrl, expiresAt, oneTime? }`, 201. `duration` is any `parseDuration` value (`15m`, `1h`, `24h` default, `1w`, `36h`, `10d`, bare hours). 429 when rate-limited. |
 | `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, png/jpeg/gif/webp only (allowlist in `upload.ts`). Image TTL capped at 30d (`MAX_IMAGE_TTL_HOURS`); R2 lifecycle policy deletes all objects after 30 days. 429 when rate-limited. |
-| `GET` | `/:code` | 301 (regular) / 301 + `no-store` + delete (one-time) / 404 / 410 expired. |
-| `GET` | `/img/:code` | Same semantics; non-one-time `Cache-Control: max-age` capped at remaining TTL (max 86400s). |
+| `GET` | `/:code` | 301 (regular) / 200 confirm page (one-time) / 404 / 410 expired. |
+| `POST` | `/:code` | Consumes one-time (301 + `no-store` + delete); regular behaves like `GET`. |
+| `GET` | `/img/:code` | Image bytes (regular) / 200 confirm page (one-time); non-one-time `Cache-Control: max-age` capped at remaining TTL (max 86400s). |
+| `POST` | `/img/:code` | Consumes one-time (bytes + `no-store` + delete); regular behaves like `GET`. |
 | `GET` | `/api/docs` | Serves `public/docs.html` via `ASSETS`. |

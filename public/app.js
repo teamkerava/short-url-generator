@@ -130,7 +130,7 @@ shortenForm.onsubmit = async function (e) {
             if (data.expiresAt) {
                 try { m += 'expires ' + esc(new Date(data.expiresAt).toLocaleString()) + '<br>'; } catch (err) {}
             }
-            if (data.oneTime) m += 'one-time link — burns after first view<br>';
+            if (data.oneTime) m += 'one-time link — burns after recipient reveals it<br>';
             ok('your short url:', data.shortUrl, m, null);
         } else {
             fail(data.error || 'something went wrong');
@@ -290,8 +290,8 @@ function handleUploadResult(f, status, responseText, retryAfter) {
         if (data.expiresAt) {
             try { im += '<br>expires ' + esc(new Date(data.expiresAt).toLocaleString()); } catch (err) {}
         }
-        if (data.oneTime) im += '<br>one-time link — burns after first view';
-        // One-time links burn on first GET, so never preview via the
+        if (data.oneTime) im += '<br>one-time link — burns after recipient reveals it';
+        // One-time links need a POST to burn, so never preview via the
         // server URL — the browser fetch would consume the link.
         // Preview the local file instead; it never touches the server.
         var thumb = data.shortUrl;

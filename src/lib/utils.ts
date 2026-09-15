@@ -44,6 +44,38 @@ export const parseOneTime = (value: unknown): boolean => {
 };
 
 /**
+ * Interstitial confirm page for one-time links/images.
+ * GETs only render this page (never burn) so chat link-previews and bots
+ * can't consume the entry — only an explicit POST (the form button) burns it.
+ * The target URL / image bytes are deliberately NOT embedded here.
+ */
+export const oneTimeConfirmResponse = (kind: 'link' | 'image'): Response => {
+  const noun = kind === 'link' ? 'link' : 'image';
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<meta name="robots" content="noindex, nofollow, noarchive">` +
+    `<title>one-time ${noun} — click to reveal</title>` +
+    `<style>body{font-family:monospace,sans-serif;background:#1a1a1a;color:#fff;display:flex;` +
+    `align-items:center;justify-content:center;min-height:100vh;margin:0}` +
+    `.box{max-width:26rem;padding:2rem;text-align:center}` +
+    `button{font:inherit;background:#38bdf8;border:0;border-radius:6px;padding:.6rem 1.4rem;` +
+    `cursor:pointer;margin-top:1rem}</style></head><body><div class="box">` +
+    `<h1>one-time ${noun}</h1>` +
+    `<p>this ${noun} burns after you reveal it. previews and bots only see this page — ` +
+    `nothing is burned until you click.</p>` +
+    `<form method="POST"><button type="submit">reveal once &rarr;</button></form>` +
+    `</div></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html;charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Robots-Tag': 'noindex, nofollow, noarchive',
+    },
+  });
+};
+
+/**
  * Per-IP fixed-window rate limits for the write APIs. Counters live in the
  * existing SHORT_URLS KV under `rl:<route>:<ip>:<window>` keys with a native
  * TTL, so no new bindings are needed. Best-effort like the rest of the

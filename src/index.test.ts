@@ -390,14 +390,26 @@ describe("Short URL Generator", () => {
     const visit = (code: string) =>
       worker.fetch(new Request(`http://localhost/${code}`), mockEnvOnce as any, {} as any);
 
-    test("one-time URL redirects once with no-store, then 404s", async () => {
+    const consume = (code: string) =>
+      worker.fetch(new Request(`http://localhost/${code}`, { method: "POST" }), mockEnvOnce as any, {} as any);
+
+    test("one-time URL shows confirm page on GET, burns on POST, then 404s", async () => {
       const created = await shorten({ url: "https://example.com/secret", oneTime: true });
       expect(created.status).toBe(201);
 
       const body = await created.json();
       expect(body.oneTime).toBe(true);
 
-      const first = await visit(body.code);
+      // Previews/bots only see the confirm page — repeated GETs never burn.
+      for (let i = 0; i < 2; i++) {
+        const preview = await visit(body.code);
+        expect(preview.status).toBe(200);
+        expect(preview.headers.get("Content-Type")).toInclude("text/html");
+        expect(preview.headers.get("Cache-Control")).toBe("no-store");
+        expect(kv.has(body.code)).toBe(true);
+      }
+
+      const first = await consume(body.code);
       expect(first.status).toBe(301);
       expect(first.headers.get("Cache-Control")).toBe("no-store");
 
@@ -468,14 +480,26 @@ describe("Short URL Generator", () => {
     const serve = (code: string) =>
       worker.fetch(new Request(`http://localhost/img/${code}`), mockEnvImgOnce as any, {} as any);
 
-    test("one-time image serves once with no-store, then 404s", async () => {
+    const consumeImg = (code: string) =>
+      worker.fetch(new Request(`http://localhost/img/${code}`, { method: "POST" }), mockEnvImgOnce as any, {} as any);
+
+    test("one-time image shows confirm page on GET, burns on POST, then 404s", async () => {
       const uploadRes = await uploadOnce(true);
       expect(uploadRes.status).toBe(201);
 
       const { code, oneTime } = await uploadRes.json();
       expect(oneTime).toBe(true);
 
-      const first = await serve(code);
+      // Previews/bots only see the confirm page — repeated GETs never burn.
+      for (let i = 0; i < 2; i++) {
+        const preview = await serve(code);
+        expect(preview.status).toBe(200);
+        expect(preview.headers.get("Content-Type")).toInclude("text/html");
+        expect(preview.headers.get("Cache-Control")).toBe("no-store");
+        expect(imgStore.has(code)).toBe(true);
+      }
+
+      const first = await consumeImg(code);
       expect(first.status).toBe(200);
       expect(first.headers.get("Cache-Control")).toBe("no-store");
       expect(await first.arrayBuffer()).toHaveLength("burn-after-reading".length);
@@ -514,8 +538,18 @@ describe("Short URL Generator", () => {
         },
       };
 
-      const response = await worker.fetch(
+      // GET only renders the confirm page — must not burn.
+      const preview = await worker.fetch(
         new Request("http://localhost/img/legacy.png"),
+        legacyEnv as any,
+        {} as any
+      );
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("Content-Type")).toInclude("text/html");
+      expect(legacyEnv.IMAGE_R2.delete).not.toHaveBeenCalled();
+
+      const response = await worker.fetch(
+        new Request("http://localhost/img/legacy.png", { method: "POST" }),
         legacyEnv as any,
         {} as any
       );

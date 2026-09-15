@@ -80,7 +80,7 @@ curl -X POST https://your-worker.workers.dev/api/shorten \
 
 - `url` (required): http(s) only.
 - `duration` (optional): `15m`, `1h`, `24h` (default), `1w`, or custom like `36h`.
-- `oneTime` (optional): `true` burns the link after the first view.
+- `oneTime` (optional): `true` burns the link after the recipient reveals it (`GET` shows a confirm page safe for previews/bots, `POST` burns).
 
 ```json
 {
@@ -101,7 +101,7 @@ curl -X POST https://your-worker.workers.dev/api/upload \
 
 - `image` (required): the file.
 - `duration` (optional): same values as above.
-- `oneTime` (optional, `true`/`1`): burns the link after the first view.
+- `oneTime` (optional, `true`/`1`): burns the link after the recipient reveals it (`GET` shows a confirm page safe for previews/bots, `POST` burns).
 
 ```json
 {
@@ -113,10 +113,13 @@ curl -X POST https://your-worker.workers.dev/api/upload \
 ```
 
 ### `GET /:code`
-`301` to target. `404` if unknown (or already burned). `410` if expired. One-time links are served with `Cache-Control: no-store`.
+`301` to target. `404` if unknown (or already burned). `410` if expired. One-time links return a `200` confirm page on `GET` (`no-store`); `POST` burns then `301` redirects (`no-store`).
 
 ### `GET /img/:code`
-Serves the image. `404` if missing (or already burned). `410` if expired. One-time images are served with `Cache-Control: no-store`.
+Serves the image. `404` if missing (or already burned). `410` if expired. One-time images return a `200` confirm page on `GET` (`no-store`); `POST` burns then serves (`no-store`).
+
+### `POST /:code`, `POST /img/:code`
+Consume a one-time link/image (the confirm-page form posts here). Behaves like the `GET` for regular entries.
 
 ### Notes
 Links expire — default `24h`. Expired entries return `410` and are deleted on access. Errors look like `{"error": "..."}` with a matching status code. Full version at `GET /api/docs`.

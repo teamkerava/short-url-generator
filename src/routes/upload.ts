@@ -1,6 +1,6 @@
 import { error } from 'itty-router';
 import type { Env, Request } from '../lib/types';
-import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp } from '../lib/utils';
+import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp, oneTimeConfirmResponse } from '../lib/utils';
 
 // POST /api/upload
 // Request body: multipart/form-data with "image" field,
@@ -114,9 +114,54 @@ export const handleUpload = async (request: Request, env: Env) => {
 };
 
 // GET /img/:code
-// Serves image from R2 bucket. One-time images are deleted after first serve.
+// Regular images serve immediately. One-time images render a confirm page —
+// previews/bots only see the page and never burn the entry. The burn happens
+// on POST /img/:code (the form button), which deletes then serves the bytes.
 
 export const handleServeImage = async (request: Request, env: Env) => {
+  const code = request.params.code;
+  const file = await env.IMAGE_R2.get(code);
+
+  if (!file) {
+    return error(404, `Image '${code}' not found. It either never existed or already burned after its one glorious view.`);
+  }
+
+  const expiresAt = file.customMetadata?.expiresAt;
+  if (expiresAt && new Date(expiresAt) < new Date()) {
+    try {
+      await env.IMAGE_R2.delete(code);
+    } catch (e) {}
+    return error(410, "This image has expired. Nothing gold can stay.");
+  }
+
+  // Accept the legacy mixed-case key too (objects uploaded before the fix).
+  const oneTime = file.customMetadata?.onetime === '1' || file.customMetadata?.oneTime === '1';
+  if (oneTime) {
+    return oneTimeConfirmResponse('image');
+  }
+
+  const contentType = file.httpMetadata?.contentType || 'application/octet-stream';
+  const body = await file.arrayBuffer();
+
+  // Don't let caches outlive the object: cap max-age at the remaining TTL.
+  // Objects uploaded before expiry existed have no metadata and keep the old header.
+  let cacheControl = 'public, max-age=31536000, immutable';
+  if (expiresAt) {
+    const remainingSec = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+    cacheControl = `public, max-age=${Math.min(remainingSec, 86400)}`;
+  }
+
+  return new Response(body, {
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': cacheControl
+    }
+  });
+};
+
+// POST /img/:code — consumes a one-time image (burn after reading).
+
+export const handleConsumeImage = async (request: Request, env: Env) => {
   const code = request.params.code;
   const file = await env.IMAGE_R2.get(code);
 
@@ -150,8 +195,6 @@ export const handleServeImage = async (request: Request, env: Env) => {
     });
   }
 
-  // Don't let caches outlive the object: cap max-age at the remaining TTL.
-  // Objects uploaded before expiry existed have no metadata and keep the old header.
   let cacheControl = 'public, max-age=31536000, immutable';
   if (expiresAt) {
     const remainingSec = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
