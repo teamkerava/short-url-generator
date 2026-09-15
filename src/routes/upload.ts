@@ -1,6 +1,6 @@
 import { error } from 'itty-router';
 import type { Env, Request } from '../lib/types';
-import { expiryUrl, generateShortCode, parseDuration, parseOneTime } from '../lib/utils';
+import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp } from '../lib/utils';
 
 // POST /api/upload
 // Request body: multipart/form-data with "image" field,
@@ -17,14 +17,17 @@ const ALLOWED_IMAGE_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
   'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-  'image/avif': 'avif',
-  'image/bmp': 'bmp',
-  'image/x-icon': 'ico',
-  'image/vnd.microsoft.icon': 'ico',
 };
 
 export const handleUpload = async (request: Request, env: Env) => {
+  const rl = await checkRateLimit(env.SHORT_URLS, 'upload', getClientIp(request));
+  if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: "Easy there, shutterbug. Too many uploads — take a breath and try again in a bit." }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': String(rl.retryAfter) },
+    });
+  }
+
   if (!env.IMAGE_R2) {
     return error(500, "Image storage is not configured. The hamster powering R2 called in sick.");
   }
@@ -45,7 +48,7 @@ export const handleUpload = async (request: Request, env: Env) => {
   const mimeType = file.type || 'application/octet-stream';
   const fileExt = ALLOWED_IMAGE_TYPES[mimeType];
   if (!fileExt) {
-    return error(400, `Unsupported image type '${mimeType}'. We take png, jpeg, gif, webp, svg, avif, bmp, ico — not modern art.`);
+    return error(400, `Unsupported image type '${mimeType}'. We take png, jpeg, gif, webp — not modern art.`);
   }
 
   if (file.size === 0) {

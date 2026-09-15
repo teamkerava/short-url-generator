@@ -11,7 +11,7 @@
 | Install deps | `bun install` |
 | Dev server | `bun start` (`wrangler dev`, port 8787, emulates KV/R2 locally) |
 | Deploy | `bun run deploy` |
-| Tests | `bun test` (single file: `src/index.test.ts`; current baseline 24 pass / 0 fail) |
+| Tests | `bun test` (single file: `src/index.test.ts`; current baseline 29 pass / 0 fail) |
 | Lint/typecheck | `bunx tsc --noEmit` (strict; this *is* the linter) |
 
 - `wrangler` CLI requires **Node ≥ 22** — use bun for tests/typecheck instead.
@@ -27,17 +27,22 @@
 - Short-link (`/:code`) embeds resolve to the *target's* preview (bare 301); `/img/:code` embeds as a raw image.
 - The active tab (url/image) persists in a `shorten.defaultTab` cookie (1yr, `SameSite=Lax`); tab switches save it, page load restores it (try/catch — private mode may throw).
 - The image pane accepts clipboard images (paste anywhere picks up `image/*` from `clipboardData`, switches to the image tab, loads the file into the form); the dropzone auto-focuses whenever the image tab becomes active so paste works immediately.
+- The image form validates type/size client-side, shows a thumbnail, and uploads via XHR with a progress bar + cancel.
+- Tabs use `tablist`/`tab`/`tabpanel` roles with `aria-selected` kept in sync by `switchTab`; the dropzone is a labelled `button`.
+- `public/` also serves `robots.txt` (allow all); docs snippets have copy buttons via an inline script in `docs.html`.
 - The image pane shows a "deleted automatically after 30 days" note — it's load-bearing (enforced cap + R2 lifecycle, below), keep it if you touch that pane.
 
 ## Gotchas (read before touching read paths)
 
-- **Never fetch a one-time URL except to consume it.** Any GET burns it (entry deleted, second view 404s). The frontend previews one-time images via local `URL.createObjectURL`, never via the server URL — keep it that way.
+- **Never fetch a one-time URL except to consume it.** Any GET burns it — including chat link-previews and bots — entry deleted, second view 404s. The frontend previews one-time images via local `URL.createObjectURL`, never via the server URL — keep it that way.
 - **R2 `customMetadata` keys: write lowercase (`onetime`), accept both cases on read.** Metadata travels as case-insensitive `x-amz-meta-*` headers and may come back lowercased; mocks preserve case, production may not.
 - **KV values have two formats**: legacy plain-string URLs and current JSON `{ url, createdAt, expiresAt, oneTime? }`. `GET /:code` must handle both.
+- **Short-URL KV entries carry native `expirationTtl`** matching the duration (60s minimum); dead entries vanish without a read, and the manual 410 path stays for legacy entries without TTL.
 - **Deletes are best-effort** (try/catch, e.g. expiry cleanup, one-time burn). Concurrent first-readers can race the burn — KV/R2 have no atomic take.
 - **One-time redirects can't use `Response.redirect()`** — built manually with `no-store` (`new Response(null, { status: 301, headers: { Location, 'Cache-Control': 'no-store' } })`).
 - **Trailing-slash history**: `Response.redirect()` normalizes `https://example.com` → `https://example.com/`; tests assert the normalized form, so don't change handler behavior for this.
 - **Test mocks must include `delete`** on KV/R2 envs or one-time/expiry paths throw. Call pattern: `worker.fetch(request, mockEnv as any, {} as any)`.
+- **Rate limits**: `POST /api/shorten` 30 per 10min per IP, `POST /api/upload` 20 per 10min per IP — fixed-window counters in `SHORT_URLS` (`rl:` keys with KV TTL). Over-limit returns 429 + `Retry-After`; unidentifiable IPs fail open.
 - Error messages are deliberately snarky (site voice). Keep status codes stable — tests and the frontend (`data.error`) depend on them, not on message text.
 
 ## Bindings (`wrangler.toml`; setup commands in its comments)
@@ -49,8 +54,8 @@
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `POST` | `/api/shorten` | Body `{ url, duration?, oneTime? }` → `{ code, shortUrl, expiresAt, oneTime? }`, 201. `duration` is any `parseDuration` value (`15m`, `1h`, `24h` default, `1w`, `36h`, `10d`, bare hours). |
-| `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, fixed allowlist in `upload.ts`. Image TTL capped at 30d (`MAX_IMAGE_TTL_HOURS`); R2 lifecycle policy deletes all objects after 30 days. |
+| `POST` | `/api/shorten` | Body `{ url, duration?, oneTime? }` → `{ code, shortUrl, expiresAt, oneTime? }`, 201. `duration` is any `parseDuration` value (`15m`, `1h`, `24h` default, `1w`, `36h`, `10d`, bare hours). 429 when rate-limited. |
+| `POST` | `/api/upload` | Multipart `image` + `duration?` + `oneTime?` (`"true"`/`"1"`/`"on"`). 10 MB max, png/jpeg/gif/webp only (allowlist in `upload.ts`). Image TTL capped at 30d (`MAX_IMAGE_TTL_HOURS`); R2 lifecycle policy deletes all objects after 30 days. 429 when rate-limited. |
 | `GET` | `/:code` | 301 (regular) / 301 + `no-store` + delete (one-time) / 404 / 410 expired. |
 | `GET` | `/img/:code` | Same semantics; non-one-time `Cache-Control: max-age` capped at remaining TTL (max 86400s). |
 | `GET` | `/api/docs` | Serves `public/docs.html` via `ASSETS`. |

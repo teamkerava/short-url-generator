@@ -92,7 +92,7 @@ curl -X POST https://your-worker.workers.dev/api/shorten \
 ```
 
 ### `POST /api/upload`
-Upload an image, get a link back. Max 10 MB: png jpeg gif webp svg avif bmp ico.
+Upload an image, get a link back. Max 10 MB: png jpeg gif webp.
 
 ```bash
 curl -X POST https://your-worker.workers.dev/api/upload \

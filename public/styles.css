@@ -194,6 +194,14 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
     padding: 0;
 }
 .fileline button:hover { text-decoration: underline; }
+.fileline img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); display: none; flex: none; }
+.fileline img.show { display: block; }
+.progress { display: none; margin-top: 10px; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.progress.show { display: flex; }
+.progress .track { flex: 1; height: 8px; background: #ececec; border-radius: 4px; overflow: hidden; }
+.progress #uploadBar { height: 100%; width: 0; background: var(--accent-ink); }
+.progress button { font-family: var(--mono); font-size: 0.78rem; background: none; border: none; color: var(--accent-ink); cursor: pointer; padding: 0; }
+.progress button:hover { text-decoration: underline; }
 #result { display: none; margin-top: 14px; }
 #result.show { display: block; }
 .out {
@@ -255,6 +263,20 @@ h2 { font-family: var(--mono); font-size: 0.95rem; margin: 28px 0 8px; }
 .docs ul { margin: 8px 0 0; padding-left: 20px; color: #444; font-size: 0.9rem; }
 .docs li { margin: 2px 0; }
 .docs li::marker { color: var(--muted); }
+.docs pre { position: relative; }
+.docs pre .copy {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    background: none;
+    border: none;
+    color: var(--accent-ink);
+    cursor: pointer;
+    padding: 0;
+}
+.docs pre .copy:hover { text-decoration: underline; }
 .m { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 5px; margin-right: 6px; vertical-align: 1px; }
 .m.post { background: #e0f2fe; color: var(--accent-ink); }
 .m.get { background: #dcfce7; color: #15803d; }

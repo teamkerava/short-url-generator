@@ -20,6 +20,8 @@ function switchTab(which, save) {
     var isUrl = which === 'url';
     tabUrl.classList.toggle('active', isUrl);
     tabImage.classList.toggle('active', !isUrl);
+    tabUrl.setAttribute('aria-selected', isUrl ? 'true' : 'false');
+    tabImage.setAttribute('aria-selected', !isUrl ? 'true' : 'false');
     panelUrl.classList.toggle('active', isUrl);
     panelImage.classList.toggle('active', !isUrl);
     resultDiv.classList.remove('show');
@@ -149,7 +151,31 @@ var imageExpiryGrid = document.getElementById('imageExpiryGrid');
 var imageCustomRow = document.getElementById('imageCustomRow');
 var imageDurationInput = document.getElementById('imageDurationInput');
 var imageOneTimeCheck = document.getElementById('imageOneTimeCheck');
+var fileThumb = document.getElementById('fileThumb');
+var uploadProgress = document.getElementById('uploadProgress');
+var uploadBar = document.getElementById('uploadBar');
+var uploadCancel = document.getElementById('uploadCancel');
 var imageDuration = '24h';
+var uploadXhr = null;
+var thumbUrl = null;
+
+// Mirrors the server gate in src/routes/upload.ts — fail fast, no wasted upload.
+var OK_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function checkFile(f) {
+    if (OK_IMAGE_TYPES.indexOf(f.type) === -1) return 'that type is not supported — png, jpg, gif, webp only.';
+    if (f.size === 0) return 'empty file. that is just vibes, not an image.';
+    if (f.size > MAX_IMAGE_BYTES) return 'image too large. 10 MB max.';
+    return null;
+}
+
+function clearThumb() {
+    try { if (thumbUrl) URL.revokeObjectURL(thumbUrl); } catch (err) {}
+    thumbUrl = null;
+    fileThumb.removeAttribute('src');
+    fileThumb.classList.remove('show');
+}
 
 imageExpiryGrid.addEventListener('click', function (e) {
     var b = e.target.closest('button');
@@ -168,13 +194,28 @@ imageExpiryGrid.addEventListener('click', function (e) {
 });
 
 function setFile(f) {
-    if (!f) return;
+    if (!f) return false;
+    var bad = checkFile(f);
+    if (bad) {
+        fileInput.value = '';
+        filePreview.classList.remove('show');
+        clearThumb();
+        fail(bad);
+        return false;
+    }
     var dt = new DataTransfer();
     dt.items.add(f);
     fileInput.files = dt.files;
     var kb = f.size > 1024 ? ' · ' + (f.size / 1024).toFixed(1) + 'kb' : ' · ' + f.size + 'b';
     fileNameEl.textContent = (f.name || 'image') + kb;
+    clearThumb();
+    try {
+        thumbUrl = URL.createObjectURL(f);
+        fileThumb.src = thumbUrl;
+        fileThumb.classList.add('show');
+    } catch (err) {}
     filePreview.classList.add('show');
+    return true;
 }
 dropzone.onclick = function () { fileInput.click(); };
 dropzone.onkeydown = function (e) {
@@ -224,47 +265,86 @@ document.addEventListener('paste', function (e) {
 });
 fileRemove.onclick = function (e) {
     e.stopPropagation();
+    if (uploadXhr) { try { uploadXhr.abort(); } catch (err) {} }
     fileInput.value = '';
     filePreview.classList.remove('show');
+    clearThumb();
 };
 
-uploadForm.onsubmit = async function (e) {
+function resetUploadState() {
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = 'upload →';
+    uploadProgress.classList.remove('show');
+    uploadBar.style.width = '0';
+    uploadXhr = null;
+}
+uploadCancel.onclick = function () {
+    if (uploadXhr) { try { uploadXhr.abort(); } catch (err) {} }
+};
+
+function handleUploadResult(f, status, responseText, retryAfter) {
+    var data = null;
+    try { data = JSON.parse(responseText); } catch (err) {}
+    if (status >= 200 && status < 300 && data) {
+        var im = esc(f.name || '') + (data.originalMimeType ? ' · ' + esc(data.originalMimeType) : '');
+        if (data.expiresAt) {
+            try { im += '<br>expires ' + esc(new Date(data.expiresAt).toLocaleString()); } catch (err) {}
+        }
+        if (data.oneTime) im += '<br>one-time link — burns after first view';
+        // One-time links burn on first GET, so never preview via the
+        // server URL — the browser fetch would consume the link.
+        // Preview the local file instead; it never touches the server.
+        var thumb = data.shortUrl;
+        if (data.oneTime) {
+            try { thumb = URL.createObjectURL(f); } catch (err) { thumb = null; }
+        }
+        ok('your image link:', data.shortUrl, im, thumb);
+    } else {
+        var msg = (data && data.error) || 'something went wrong';
+        if (status === 429 && retryAfter) msg += ' (retry in ' + retryAfter + 's)';
+        fail(msg);
+    }
+}
+
+uploadForm.onsubmit = function (e) {
     e.preventDefault();
     var f = fileInput.files && fileInput.files[0];
     resultDiv.classList.remove('show');
     resultDiv.innerHTML = '';
     if (!f) { fail('choose an image first.'); return; }
+    var bad = checkFile(f);
+    if (bad) { fail(bad); return; }
     var fd = new FormData();
     fd.append('image', f);
     fd.append('duration', imageDuration === 'custom' ? (imageDurationInput.value.trim() || '24h') : imageDuration);
     if (imageOneTimeCheck.checked) fd.append('oneTime', 'true');
     uploadBtn.disabled = true;
     uploadBtn.textContent = 'uploading…';
-    try {
-        var res = await fetch('/api/upload', { method: 'POST', body: fd });
-        var data = await res.json();
-        if (res.ok) {
-            var im = esc(f.name || '') + (data.originalMimeType ? ' · ' + esc(data.originalMimeType) : '');
-            if (data.expiresAt) {
-                try { im += '<br>expires ' + esc(new Date(data.expiresAt).toLocaleString()); } catch (err) {}
-            }
-            if (data.oneTime) im += '<br>one-time link — burns after first view';
-            // One-time links burn on first GET, so never preview via the
-            // server URL — the browser fetch would consume the link.
-            // Preview the local file instead; it never touches the server.
-            var thumb = data.shortUrl;
-            if (data.oneTime) {
-                try { thumb = URL.createObjectURL(f); } catch (err) { thumb = null; }
-            }
-            ok('your image link:', data.shortUrl, im, thumb);
-        } else {
-            fail(data.error || 'something went wrong');
+    uploadProgress.classList.add('show');
+    uploadBar.style.width = '0';
+    // XHR (not fetch) so the upload can report progress and be cancelled.
+    var xhr = new XMLHttpRequest();
+    uploadXhr = xhr;
+    xhr.open('POST', '/api/upload');
+    xhr.upload.onprogress = function (ev) {
+        if (ev.lengthComputable && ev.total > 0) {
+            uploadBar.style.width = Math.round(ev.loaded / ev.total * 100) + '%';
         }
+    };
+    xhr.onload = function () {
+        var ra = null;
+        try { ra = xhr.getResponseHeader('Retry-After'); } catch (err) {}
+        handleUploadResult(f, xhr.status, xhr.responseText, ra);
+        resetUploadState();
+    };
+    xhr.onerror = function () { fail('failed to connect'); resetUploadState(); };
+    xhr.onabort = function () { fail('upload cancelled.'); resetUploadState(); };
+    try {
+        xhr.send(fd);
     } catch (err) {
         fail(err.message || 'failed to connect');
+        resetUploadState();
     }
-    uploadBtn.disabled = false;
-    uploadBtn.textContent = 'upload →';
 };
 
 window.onload = function () {

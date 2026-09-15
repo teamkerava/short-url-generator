@@ -36,7 +36,7 @@
     <ul>
         <li><code>url</code> — required. http(s) only.</li>
         <li><code>duration</code> — optional. <code>15m</code>, <code>1h</code>, <code>24h</code> (default), <code>1w</code>, or custom like <code>36h</code>.</li>
-        <li><code>oneTime</code> — optional. <code>true</code> burns the link after the first view.</li>
+        <li><code>oneTime</code> — optional. <code>true</code> burns the link after the first view. Note: any GET burns it, including chat link-previews and bots.</li>
     </ul>
     <pre><code>{
   "code": "abc123",
@@ -46,13 +46,13 @@
 }</code></pre>
 
     <h2><span class="m post">POST</span> /api/upload</h2>
-    <p>upload an image, get a link back. max 10mb: png jpeg gif webp svg avif bmp ico.</p>
+    <p>upload an image, get a link back. max 10mb: png jpeg gif webp.</p>
     <pre><code>curl -X POST https://yourdomain.com/api/upload \
   -F image=@cat.png -F duration=24h -F oneTime=true</code></pre>
     <ul>
         <li><code>image</code> — required. the file.</li>
         <li><code>duration</code> — optional, same values as above, 30 days max.</li>
-        <li><code>oneTime</code> — optional (<code>true</code>/<code>1</code>). burns the link after the first view.</li>
+        <li><code>oneTime</code> — optional (<code>true</code>/<code>1</code>). burns the link after the first view. Note: any GET burns it, including chat link-previews and bots.</li>
     </ul>
     <p>images are deleted automatically after 30 days at the latest.</p>
     <pre><code>{
@@ -69,7 +69,27 @@
     <p>serves the image. <code>404</code> if missing (or already burned). <code>410</code> if expired. one-time images are served with <code>no-store</code>.</p>
 
     <h2>notes</h2>
-    <p>links expire — default <code>24h</code>. expired entries return <code>410</code> and are deleted on access. errors look like <code>{"error": "..."}</code> with a matching status code.</p>
+    <p>links expire — default <code>24h</code>. expired entries return <code>410</code> and are deleted on access. write APIs are rate-limited per IP (<code>429</code> + <code>Retry-After</code> when over). errors look like <code>{"error": "..."}</code> with a matching status code.</p>
     </div>
+    <script>
+    // Copy buttons for the curl/json snippets — no build step, like app.js.
+    document.querySelectorAll('.docs pre').forEach(function (pre) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = 'copy';
+        b.className = 'copy';
+        b.onclick = function () {
+            var t = pre.querySelector('code').innerText;
+            var done = function (good) {
+                b.textContent = good ? 'copied' : 'copy failed';
+                setTimeout(function () { b.textContent = 'copy'; }, 1400);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(t).then(function () { done(true); }, function () { done(false); });
+            } else { done(false); }
+        };
+        pre.appendChild(b);
+    });
+    </script>
 </body>
 </html>

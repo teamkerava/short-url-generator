@@ -42,3 +42,51 @@ export const parseOneTime = (value: unknown): boolean => {
   }
   return false;
 };
+
+/**
+ * Per-IP fixed-window rate limits for the write APIs. Counters live in the
+ * existing SHORT_URLS KV under `rl:<route>:<ip>:<window>` keys with a native
+ * TTL, so no new bindings are needed. Best-effort like the rest of the
+ * codebase: concurrent writers can overshoot the limit by a little.
+ */
+export const RATE_LIMITS = {
+  shorten: { limit: 30, windowSeconds: 600 },
+  upload: { limit: 20, windowSeconds: 600 },
+} as const;
+
+export type RateLimitRoute = keyof typeof RATE_LIMITS;
+
+export const getClientIp = (request: Request): string => {
+  const cf = request.headers.get('CF-Connecting-IP');
+  if (cf && cf.trim()) return cf.trim();
+  const xff = request.headers.get('X-Forwarded-For');
+  if (xff && xff.trim()) return xff.split(',')[0].trim();
+  return 'unknown';
+};
+
+export const checkRateLimit = async (
+  kv: { get(key: string): Promise<string | null>; put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void> },
+  route: RateLimitRoute,
+  ip: string,
+): Promise<{ allowed: boolean; retryAfter: number }> => {
+  const { limit, windowSeconds } = RATE_LIMITS[route];
+  // Can't identify the caller — fail open rather than locking everyone out.
+  if (!ip || ip === 'unknown') return { allowed: true, retryAfter: 0 };
+  const nowSec = Math.floor(Date.now() / 1000);
+  const windowId = Math.floor(nowSec / windowSeconds);
+  const key = `rl:${route}:${ip}:${windowId}`;
+  let count = 0;
+  try {
+    const raw = await kv.get(key);
+    if (raw) count = parseInt(raw, 10) || 0;
+  } catch (e) {
+    return { allowed: true, retryAfter: 0 };
+  }
+  if (count >= limit) {
+    return { allowed: false, retryAfter: Math.max(1, windowSeconds - (nowSec % windowSeconds)) };
+  }
+  try {
+    await kv.put(key, String(count + 1), { expirationTtl: windowSeconds });
+  } catch (e) {}
+  return { allowed: true, retryAfter: 0 };
+};

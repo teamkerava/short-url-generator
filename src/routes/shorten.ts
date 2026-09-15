@@ -1,11 +1,19 @@
 import { error } from 'itty-router';
 import type { Env, Request, ShortUrlData, ShortenRequest } from '../lib/types';
-import { expiryUrl, generateShortCode, parseOneTime } from '../lib/utils';
+import { expiryUrl, generateShortCode, parseDuration, parseOneTime, checkRateLimit, getClientIp } from '../lib/utils';
 
 // POST /api/shorten
 // Request body: { "url": "https://example.com", "duration"?: "24h", "oneTime"?: true }
 
 export const handleShorten = async (request: Request, env: Env) => {
+  const rl = await checkRateLimit(env.SHORT_URLS, 'shorten', getClientIp(request));
+  if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: "Whoa, slow down. Too many links — take a breath and try again in a bit." }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': String(rl.retryAfter) },
+    });
+  }
+
   let content: ShortenRequest | undefined;
   try {
     content = await request.json() as ShortenRequest;
@@ -35,13 +43,23 @@ export const handleShorten = async (request: Request, env: Env) => {
   const code = generateShortCode();
   const duration = content?.duration || 24;
   const oneTime = parseOneTime(content?.oneTime);
+  let expiresAt: string;
+  let ttlSeconds: number;
+  try {
+    expiresAt = expiryUrl(normalizedUrl, duration).expiresAt;
+    // Native KV expiry so dead entries vanish without requiring a read.
+    // KV enforces a 60s minimum TTL — clamp sub-minute durations up.
+    ttlSeconds = Math.max(60, Math.round(parseDuration(duration) * 3600));
+  } catch (err) {
+    return error(400, (err as Error).message);
+  }
   const kv_value: ShortUrlData = {
     url: normalizedUrl,
     createdAt: new Date().toISOString(),
-    expiresAt: expiryUrl(normalizedUrl, duration).expiresAt,
+    expiresAt,
     ...(oneTime ? { oneTime: true as const } : {}),
   };
-  await env.SHORT_URLS.put(code, JSON.stringify(kv_value));
+  await env.SHORT_URLS.put(code, JSON.stringify(kv_value), { expirationTtl: ttlSeconds });
 
   const origin = new URL(request.url).origin;
   return new Response(JSON.stringify({

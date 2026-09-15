@@ -40,6 +40,80 @@ describe("Short URL Generator", () => {
     expect(body.shortUrl).toInclude(body.code);
   });
 
+  test("POST /api/shorten sets KV TTL matching duration", async () => {
+    (mockEnv.SHORT_URLS.put as any).mockClear();
+    const request = new Request("http://localhost/api/shorten", {
+      method: "POST",
+      body: JSON.stringify({ url: "https://example.com", duration: "1h" }),
+    });
+
+    const response = await worker.fetch(request, mockEnv as any, {} as any);
+    expect(response.status).toBe(201);
+
+    const calls = (mockEnv.SHORT_URLS.put as any).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[calls.length - 1][2]).toEqual({ expirationTtl: 3600 });
+  });
+
+  test("POST /api/shorten rejects invalid duration with 400", async () => {
+    const request = new Request("http://localhost/api/shorten", {
+      method: "POST",
+      body: JSON.stringify({ url: "https://example.com", duration: "forever" }),
+    });
+
+    const response = await worker.fetch(request, mockEnv as any, {} as any);
+    expect(response.status).toBe(400);
+  });
+
+  test("POST /api/shorten rate-limits per IP", async () => {
+    const store = new Map<string, string>();
+    const rlEnv = {
+      SHORT_URLS: {
+        put: mock(async (key: string, value: string) => { store.set(key, value); }),
+        get: mock(async (key: string) => store.get(key) ?? null),
+        delete: mock(async (key: string) => { store.delete(key); }),
+      },
+    };
+    let last: Response | null = null;
+    for (let i = 0; i < 31; i++) {
+      last = await worker.fetch(new Request("http://localhost/api/shorten", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "9.9.9.9", "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+      }), rlEnv as any, {} as any);
+    }
+    expect(last!.status).toBe(429);
+    expect(last!.headers.get("Retry-After")).toBeString();
+  });
+
+  test("POST /api/upload rate-limits per IP", async () => {
+    const store = new Map<string, string>();
+    const bodies = new Map<string, ArrayBuffer>();
+    const rlEnv = {
+      SHORT_URLS: {
+        put: mock(async (key: string, value: string) => { store.set(key, value); }),
+        get: mock(async (key: string) => store.get(key) ?? null),
+        delete: mock(async (key: string) => { store.delete(key); }),
+      },
+      IMAGE_R2: {
+        put: mock(async (key: string, value: ArrayBuffer) => { bodies.set(key, value); }),
+        get: mock(async () => null),
+        delete: mock(async () => {}),
+      },
+    };
+    let last: Response | null = null;
+    for (let i = 0; i < 21; i++) {
+      const form = new FormData();
+      form.append("image", new File(["fake-image-bytes"], "cat.png", { type: "image/png" }));
+      last = await worker.fetch(new Request("http://localhost/api/upload", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "8.8.8.8" },
+        body: form,
+      }), rlEnv as any, {} as any);
+    }
+    expect(last!.status).toBe(429);
+  });
+
   test("GET /:code redirects to original URL", async () => {
     const request = new Request("http://localhost/testcode");
     const response = await worker.fetch(request, mockEnv as any, {} as any);
@@ -112,6 +186,19 @@ describe("Short URL Generator", () => {
 
   test("POST /api/upload rejects non-image type", async () => {
     const file = new File(["x"], "evil.exe", { type: "application/x-msdownload" });
+    const form = new FormData();
+    form.append("image", file);
+    const request = new Request("http://localhost/api/upload", {
+      method: "POST",
+      body: form,
+    });
+
+    const response = await worker.fetch(request, mockEnvWithR2 as any, {} as any);
+    expect(response.status).toBe(400);
+  });
+
+  test("POST /api/upload rejects formerly allowed types (svg)", async () => {
+    const file = new File(["<svg></svg>"], "pic.svg", { type: "image/svg+xml" });
     const form = new FormData();
     form.append("image", file);
     const request = new Request("http://localhost/api/upload", {
